@@ -25,9 +25,9 @@ programs:
         seeds:
           - kind: "const"
             value: "escrow"
-          - kind: "arg"
+          - kind: "account_key"
             value: "depositor"
-          - kind: "arg"
+          - kind: "account_key"
             value: "beneficiary"
     instructions:
       - name: "create_escrow"

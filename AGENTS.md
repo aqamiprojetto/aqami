@@ -54,10 +54,11 @@ For meaningful work:
 2. read [`docs/architecture.md`](./docs/architecture.md)
 3. read [`docs/specification.md`](./docs/specification.md)
 4. inspect the relevant schema or example spec
-5. create or update a task spec for larger or riskier changes
-6. implement the smallest coherent change
-7. verify proportionally
-8. self-review before concluding
+5. use `aqami-cli` to validate or inspect the spec when the CLI already covers the area you are changing
+6. create or update a task spec for larger or riskier changes
+7. implement the smallest coherent change
+8. verify proportionally
+9. self-review before concluding
 
 ## Spec-First Guardrails
 

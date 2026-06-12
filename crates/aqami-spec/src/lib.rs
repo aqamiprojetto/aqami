@@ -1,0 +1,15 @@
+mod inspect;
+mod load;
+mod model;
+mod validate;
+
+pub use inspect::ProjectInspection;
+pub use load::{LoadedProjectSpec, SpecLoadError, load_project_spec};
+pub use model::{
+    AccountSpec, AqamiProjectSpec, Cluster, EventSpec, FieldSpec, FrameworkErrorSpec,
+    InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec,
+    ProgramSpec, SeedKind, SeedSpec,
+};
+pub use validate::{Diagnostic, ValidationOutcome, validate_project_spec};
+
+pub const PROJECT_SCHEMA_JSON: &str = include_str!("../../../schemas/aqami.project.schema.json");

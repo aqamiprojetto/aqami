@@ -1,0 +1,12 @@
+[package]
+name = "aqami-spec"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+yaml_serde.workspace = true

@@ -83,6 +83,15 @@ aqami-mcp
   -> aqami-cli and aqami-spec
 ```
 
+## Current Workspace
+
+The repository now includes the first executable AQAMI layer:
+
+- `crates/aqami-spec`: loads AQAMI YAML or JSON specs, validates them against the bundled schema, and applies initial semantic validation
+- `crates/aqami-cli`: exposes `validate` and `inspect` commands on top of `aqami-spec`
+
+This is intentionally the first code milestone because it gives future codegen, runtime, and MCP work a stable project model to build on.
+
 ## Current Foundation
 
 This repository is starting with infrastructure before framework code.
@@ -96,6 +105,7 @@ The initial goal is to establish:
 - MCP strategy
 - testing philosophy
 - examples and schemas that future code must respect
+- an executable spec and CLI foundation
 
 ## Source Of Truth Hierarchy
 
@@ -111,6 +121,9 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 ## Repository Map
 
 - [`AGENTS.md`](./AGENTS.md): repository contract for AI coding agents
+- [`Cargo.toml`](./Cargo.toml): workspace root
+- `crates/aqami-spec`: spec loading, schema validation, and semantic validation
+- `crates/aqami-cli`: CLI entrypoint for validation and inspection
 - [`docs/architecture.md`](./docs/architecture.md): planned system boundaries and workspace layout
 - [`docs/specification.md`](./docs/specification.md): spec-first model, domain model, and authoring rules
 - [`docs/mcp-strategy.md`](./docs/mcp-strategy.md): when MCP helps and how it should fit the system
@@ -118,6 +131,13 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - [`docs/task-specs/TEMPLATE.md`](./docs/task-specs/TEMPLATE.md): template for substantial or risky changes
 - [`schemas/aqami.project.schema.json`](./schemas/aqami.project.schema.json): initial machine-readable schema
 - [`examples/specs/escrow.aqami.yaml`](./examples/specs/escrow.aqami.yaml): example project spec
+
+## Quick Start
+
+- run `cargo test`
+- run `cargo run -p aqami-cli -- validate examples/specs/escrow.aqami.yaml`
+- run `cargo run -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml`
+- run `cargo run -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml --format json`
 
 ## Development Priorities
 
@@ -146,5 +166,12 @@ The framework should be something a serious team can trust, not a demo that happ
 
 ## Status
 
-As of June 12, 2026, this repository is in foundation-design mode.
-No framework code has been committed yet; the current deliverable is the operating system around that code.
+As of June 12, 2026, this repository has its first executable foundation:
+
+- documentation and agent guidance
+- starter schema and example spec
+- a Rust workspace
+- typed spec loading and validation
+- CLI `validate` and `inspect` commands
+
+The next most valuable step is to deepen `aqami-spec` and add early code generation, not to jump straight into MCP or runtime complexity.
