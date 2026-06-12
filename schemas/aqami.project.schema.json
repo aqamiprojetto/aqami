@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqami.dev/schemas/aqami.project.schema.json",
+  "title": "AQAMI Project Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specVersion", "package", "programs"],
+  "properties": {
+    "specVersion": {
+      "type": "string",
+      "description": "Specification version for this AQAMI project."
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "cluster": {
+      "type": "string",
+      "enum": ["localnet", "devnet", "testnet", "mainnet-beta"]
+    },
+    "programs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/program"
+      }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "program": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "accounts", "instructions"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "programId": {
+          "type": "string"
+        },
+        "docs": {
+          "type": "string"
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/account"
+          }
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instruction"
+          }
+        },
+        "pdas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pda"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frameworkError"
+          }
+        }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fields"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docs": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docs": {
+          "type": "string"
+        }
+      }
+    },
+    "instruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "accounts"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docs": {
+          "type": "string"
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instructionAccount"
+          }
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "instructionAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": ["account", "signer", "system_program", "token_program", "sysvar"]
+        },
+        "isMut": {
+          "type": "boolean"
+        },
+        "isSigner": {
+          "type": "boolean"
+        },
+        "pda": {
+          "type": "string"
+        },
+        "docs": {
+          "type": "string"
+        }
+      }
+    },
+    "pda": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "seeds"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docs": {
+          "type": "string"
+        },
+        "seeds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/seed"
+          }
+        }
+      }
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["const", "arg", "account_field", "account_key"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fields"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      }
+    },
+    "frameworkError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "code", "message"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
