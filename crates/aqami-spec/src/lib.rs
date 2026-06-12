@@ -1,6 +1,7 @@
 mod inspect;
 mod load;
 mod model;
+mod normalize;
 mod validate;
 
 pub use inspect::ProjectInspection;
@@ -9,6 +10,11 @@ pub use model::{
     AccountSpec, AqamiProjectSpec, Cluster, EventSpec, FieldSpec, FrameworkErrorSpec,
     InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec,
     ProgramSpec, SeedKind, SeedSpec,
+};
+pub use normalize::{
+    NormalizedAccount, NormalizedError, NormalizedEvent, NormalizedField, NormalizedInstruction,
+    NormalizedInstructionAccount, NormalizedPackage, NormalizedPda, NormalizedProgram,
+    NormalizedProjectSpec, normalization_diagnostics, normalize_project_spec, rust_type_name,
 };
 pub use validate::{Diagnostic, ValidationOutcome, validate_project_spec};
 

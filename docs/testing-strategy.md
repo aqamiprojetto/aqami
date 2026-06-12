@@ -36,6 +36,7 @@ Generators should use snapshot or golden-file tests for:
 - generated manifests or metadata
 
 Deterministic output is essential for agent trust.
+Deterministic output is also important for performance in the broad sense because unstable generation creates avoidable rewrite and review churn.
 
 ### 4. Runtime Unit Tests
 

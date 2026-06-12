@@ -38,6 +38,7 @@ AQAMI aims to make high-quality Solana development easier for both experienced e
 - `Rust-native`: use idiomatic Rust where it improves clarity and safety
 - `Generate responsibly`: generate the repetitive parts, keep the critical parts reviewable
 - `Agent-operable`: everything important should be discoverable through docs, schemas, examples, CLI output, or MCP tools
+- `Performance-aware`: optimize runtime-facing and generated hot paths aggressively, while keeping tooling layers explicit and maintainable
 
 ## What "AI-First" Means Here
 
@@ -89,8 +90,17 @@ The repository now includes the first executable AQAMI layer:
 
 - `crates/aqami-spec`: loads AQAMI YAML or JSON specs, validates them against the bundled schema, and applies initial semantic validation
 - `crates/aqami-cli`: exposes `validate` and `inspect` commands on top of `aqami-spec`
+- `crates/aqami-codegen`: generates deterministic Rust skeletons from normalized AQAMI specs
 
 This is intentionally the first code milestone because it gives future codegen, runtime, and MCP work a stable project model to build on.
+
+## Performance Position
+
+AQAMI should care deeply about performance, but with the right layering.
+
+- generated program code and future runtime crates should be treated as hot-path code
+- Solana-facing abstractions should avoid hidden allocations, unnecessary copies, and expensive convenience layers
+- validation, CLI, and codegen should still avoid obvious waste, but they should optimize for deterministic behavior and maintainability before chasing micro-optimizations
 
 ## Current Foundation
 
@@ -124,7 +134,9 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - [`Cargo.toml`](./Cargo.toml): workspace root
 - `crates/aqami-spec`: spec loading, schema validation, and semantic validation
 - `crates/aqami-cli`: CLI entrypoint for validation and inspection
+- `crates/aqami-codegen`: deterministic Rust skeleton generation from normalized specs
 - [`docs/architecture.md`](./docs/architecture.md): planned system boundaries and workspace layout
+- [`docs/performance.md`](./docs/performance.md): performance values and optimization priorities
 - [`docs/specification.md`](./docs/specification.md): spec-first model, domain model, and authoring rules
 - [`docs/mcp-strategy.md`](./docs/mcp-strategy.md): when MCP helps and how it should fit the system
 - [`docs/testing-strategy.md`](./docs/testing-strategy.md): quality and verification expectations
@@ -138,6 +150,7 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - run `cargo run -p aqami-cli -- validate examples/specs/escrow.aqami.yaml`
 - run `cargo run -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml`
 - run `cargo run -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml --format json`
+- run `cargo run -p aqami-cli -- generate rust-program --spec examples/specs/escrow.aqami.yaml --output-dir /tmp/aqami-out`
 
 ## Development Priorities
 
@@ -172,6 +185,8 @@ As of June 12, 2026, this repository has its first executable foundation:
 - starter schema and example spec
 - a Rust workspace
 - typed spec loading and validation
-- CLI `validate` and `inspect` commands
+- normalized spec modeling
+- deterministic Rust skeleton generation
+- CLI `validate`, `inspect`, and `generate` commands
 
 The next most valuable step is to deepen `aqami-spec` and add early code generation, not to jump straight into MCP or runtime complexity.

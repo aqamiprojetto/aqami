@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
-use aqami_spec::{ProjectInspection, load_project_spec, validate_project_spec};
+use anyhow::{Context, Result, anyhow, bail};
+use aqami_codegen::generate_rust_programs;
+use aqami_spec::{
+    Diagnostic, ProjectInspection, load_project_spec, normalize_project_spec, validate_project_spec,
+};
 use clap::{Parser, Subcommand, ValueEnum};
 
 fn main() -> Result<()> {
@@ -10,6 +13,11 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Validate { spec, format } => validate_command(spec, format),
         Command::Inspect { spec, format } => inspect_command(spec, format),
+        Command::Generate {
+            target,
+            spec,
+            output_dir,
+        } => generate_command(target, spec, output_dir),
     }
 }
 
@@ -34,12 +42,25 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    Generate {
+        #[arg(value_enum)]
+        target: GenerateTarget,
+        #[arg(long, value_name = "SPEC_PATH")]
+        spec: PathBuf,
+        #[arg(long, value_name = "OUTPUT_DIR")]
+        output_dir: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum OutputFormat {
     Text,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum GenerateTarget {
+    RustProgram,
 }
 
 fn validate_command(spec: PathBuf, format: OutputFormat) -> Result<()> {
@@ -98,6 +119,45 @@ fn inspect_command(spec: PathBuf, format: OutputFormat) -> Result<()> {
                 serde_json::to_string_pretty(&inspection)
                     .context("failed to render inspection output as JSON")?
             );
+        }
+    }
+
+    Ok(())
+}
+
+fn generate_command(target: GenerateTarget, spec: PathBuf, output_dir: PathBuf) -> Result<()> {
+    let loaded = load_project_spec(&spec)
+        .with_context(|| format!("failed to load AQAMI spec from {}", spec.display()))?;
+    let outcome = validate_project_spec(&loaded.project, &loaded.raw_value);
+    if !outcome.is_valid {
+        print_validation_text(&loaded.path, &loaded.project.package.name, &outcome);
+        bail!("cannot generate from an invalid AQAMI spec");
+    }
+
+    let normalized = normalize_project_spec(&loaded.project).map_err(|diagnostics| {
+        anyhow!(format_diagnostics(
+            "AQAMI normalization failed",
+            &diagnostics
+        ))
+    })?;
+
+    match target {
+        GenerateTarget::RustProgram => {
+            let generated =
+                generate_rust_programs(&normalized, &output_dir).with_context(|| {
+                    format!(
+                        "failed to generate Rust program skeletons under {}",
+                        output_dir.display()
+                    )
+                })?;
+            println!("Generated Rust program skeletons:");
+            for program in generated {
+                println!(
+                    "- {} -> {}",
+                    program.program_name,
+                    program.output_dir.display()
+                );
+            }
         }
     }
 
@@ -191,4 +251,15 @@ fn print_inspection_text(path: &std::path::Path, inspection: &ProjectInspection)
 
 fn comma_join<'a>(values: impl Iterator<Item = &'a str>) -> String {
     values.collect::<Vec<_>>().join(", ")
+}
+
+fn format_diagnostics(header: &str, diagnostics: &[Diagnostic]) -> String {
+    let mut output = header.to_string();
+    for diagnostic in diagnostics {
+        output.push_str("\n- ");
+        output.push_str(&diagnostic.location);
+        output.push_str(": ");
+        output.push_str(&diagnostic.message);
+    }
+    output
 }

@@ -94,6 +94,11 @@ aqami-runtime
   <- generated code depends on it
 ```
 
+Performance implication:
+
+- optimize `aqami-runtime` and generated program surfaces as hot-path code
+- keep `aqami-spec`, `aqami-cli`, and `aqami-mcp` efficient, but prioritize correctness and determinism first
+
 Important implication:
 
 - `aqami-mcp` should depend on stable spec and CLI capabilities
@@ -161,6 +166,7 @@ It should be:
 - testable via golden fixtures
 - explicit about which regions are generated versus handwritten
 - conservative about overwriting user code
+- efficient enough to support repeated local and agent-driven use without redundant parsing or unstable output
 
 ### Runtime Layer
 

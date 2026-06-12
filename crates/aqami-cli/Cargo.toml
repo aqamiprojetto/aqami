@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+aqami-codegen = { path = "../aqami-codegen" }
 aqami-spec = { path = "../aqami-spec" }
 clap.workspace = true
 serde.workspace = true

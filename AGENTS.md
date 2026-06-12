@@ -13,10 +13,11 @@ In descending order:
 
 1. correctness and security
 2. architectural clarity
-3. stable machine-readable surfaces
-4. maintainability and testability
-5. developer ergonomics
-6. speed of implementation
+3. performance on runtime-facing and generated hot paths
+4. stable machine-readable surfaces
+5. maintainability and testability
+6. developer ergonomics
+7. speed of implementation
 
 If a faster path weakens the future framework surface, call it out and recommend the stronger path.
 
@@ -33,6 +34,14 @@ It is a development surface composed of:
 - MCP tools
 
 Agents should reason about all of those as first-class framework components.
+
+## Performance Expectations
+
+- Treat future runtime crates and generated program code as performance-sensitive by default.
+- Avoid hidden allocations, unnecessary clones, and expensive abstraction layers in runtime-facing code.
+- Keep CLI, validation, and codegen efficient and deterministic, but do not turn them into unreadable micro-optimized systems without evidence.
+- Prefer structural wins over cleverness: better data flow, clearer ownership, fewer redundant passes, and cached immutable artifacts.
+- When optimizing, explain whether the change helps runtime code, generator throughput, or repository ergonomics. Those are different goals.
 
 ## Source Of Truth
 

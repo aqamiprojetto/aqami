@@ -1,10 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 
 use serde::Serialize;
 
 use crate::{
     AqamiProjectSpec, FrameworkErrorSpec, InstructionAccountRole, InstructionSpec,
-    PROJECT_SCHEMA_JSON, PdaSpec, SeedKind, SeedSpec,
+    PROJECT_SCHEMA_JSON, PdaSpec, SeedKind, SeedSpec, normalization_diagnostics,
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -20,13 +23,6 @@ pub struct ValidationOutcome {
 }
 
 impl ValidationOutcome {
-    pub fn valid() -> Self {
-        Self {
-            is_valid: true,
-            diagnostics: Vec::new(),
-        }
-    }
-
     fn with_diagnostics(diagnostics: Vec<Diagnostic>) -> Self {
         Self {
             is_valid: diagnostics.is_empty(),
@@ -41,26 +37,24 @@ pub fn validate_project_spec(
 ) -> ValidationOutcome {
     let mut diagnostics = schema_diagnostics(raw_value);
     semantic_diagnostics(project, &mut diagnostics);
+    diagnostics.extend(normalization_diagnostics(project));
     ValidationOutcome::with_diagnostics(diagnostics)
 }
 
 fn schema_diagnostics(raw_value: &serde_json::Value) -> Vec<Diagnostic> {
-    let schema_value: serde_json::Value = match serde_json::from_str(PROJECT_SCHEMA_JSON) {
-        Ok(value) => value,
-        Err(error) => {
-            return vec![Diagnostic {
-                location: "$schema".to_string(),
-                message: format!("failed to parse bundled AQAMI project schema: {error}"),
-            }];
-        }
-    };
+    static VALIDATOR: OnceLock<Result<jsonschema::Validator, String>> = OnceLock::new();
 
-    let validator = match jsonschema::validator_for(&schema_value) {
+    let validator = match VALIDATOR.get_or_init(|| {
+        let schema_value: serde_json::Value = serde_json::from_str(PROJECT_SCHEMA_JSON)
+            .map_err(|error| format!("failed to parse bundled AQAMI project schema: {error}"))?;
+        jsonschema::validator_for(&schema_value)
+            .map_err(|error| format!("failed to compile bundled AQAMI project schema: {error}"))
+    }) {
         Ok(validator) => validator,
-        Err(error) => {
+        Err(message) => {
             return vec![Diagnostic {
                 location: "$schema".to_string(),
-                message: format!("failed to compile bundled AQAMI project schema: {error}"),
+                message: message.clone(),
             }];
         }
     };
@@ -395,22 +389,22 @@ fn json_pointer(instance_path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::{load_project_spec, normalize_project_spec};
+
     use super::*;
 
-    fn parse_example() -> AqamiProjectSpec {
-        let raw_value: serde_json::Value =
-            yaml_serde::from_str(include_str!("../../../examples/specs/escrow.aqami.yaml"))
-                .expect("example spec should parse");
-        serde_json::from_value(raw_value).expect("example spec should deserialize")
+    fn parse_example() -> (AqamiProjectSpec, serde_json::Value) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/specs/escrow.aqami.yaml");
+        let loaded = load_project_spec(path).expect("example spec should load");
+        (loaded.project, loaded.raw_value)
     }
 
     #[test]
     fn example_spec_is_valid() {
-        let raw_value: serde_json::Value =
-            yaml_serde::from_str(include_str!("../../../examples/specs/escrow.aqami.yaml"))
-                .expect("example spec should parse");
-        let project =
-            serde_json::from_value(raw_value.clone()).expect("example spec should deserialize");
+        let (project, raw_value) = parse_example();
         let outcome = validate_project_spec(&project, &raw_value);
 
         assert!(outcome.is_valid, "diagnostics: {:?}", outcome.diagnostics);
@@ -418,7 +412,7 @@ mod tests {
 
     #[test]
     fn duplicate_program_names_are_reported() {
-        let mut project = parse_example();
+        let (mut project, _) = parse_example();
         project.programs.push(project.programs[0].clone());
         let raw_value = serde_json::to_value(&project).expect("project should serialize");
 
@@ -435,7 +429,7 @@ mod tests {
 
     #[test]
     fn signer_role_requires_is_signer_flag() {
-        let mut project = parse_example();
+        let (mut project, _) = parse_example();
         project.programs[0].instructions[0].accounts[0].is_signer = false;
         let raw_value = serde_json::to_value(&project).expect("project should serialize");
 
@@ -447,5 +441,13 @@ mod tests {
                 .message
                 .contains("signer role must set `isSigner`")
         }));
+    }
+
+    #[test]
+    fn normalized_example_spec_is_valid() {
+        let (project, _) = parse_example();
+        let normalized = normalize_project_spec(&project).expect("example should normalize");
+
+        assert_eq!(normalized.programs[0].instructions.len(), 2);
     }
 }

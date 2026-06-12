@@ -78,6 +78,7 @@ YAML or JSON spec
 
 Schema validation catches structural issues.
 Rust semantic validation catches domain rules that are awkward to encode purely in JSON Schema.
+Normalization then derives deterministic generator-facing identifiers and supported type mappings from the validated model.
 
 ## Proposed File Shapes
 
