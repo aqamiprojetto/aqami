@@ -224,6 +224,27 @@
         },
         "rentExempt": {
           "type": "boolean"
+        },
+        "hasOne": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hasOneConstraint"
+          }
+        }
+      }
+    },
+    "hasOneConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "account"],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

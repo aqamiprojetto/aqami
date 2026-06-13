@@ -46,6 +46,7 @@ Test explicit runtime helpers and primitives:
 - serialization boundaries
 - instruction argument handling
 - error mapping
+- typed error variants for violated invariants
 
 ### 5. Property Tests
 
@@ -97,6 +98,7 @@ High-risk behavior should have focused tests around:
 - ownership checks
 - serialization boundaries
 - code generation around account and instruction constraints
+- error surfaces that users or agents are expected to handle directly
 
 ## Definition Of Done
 

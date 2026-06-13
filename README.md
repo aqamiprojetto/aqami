@@ -36,6 +36,7 @@ AQAMI aims to make high-quality Solana development easier for both experienced e
 - `Explicit over implicit`: no hidden runtime behavior that agents must guess
 - `Stable conventions`: repository layout, naming, and crate boundaries should be predictable
 - `Rust-native`: use idiomatic Rust where it improves clarity and safety
+- `Explicit errors`: public and generated surfaces should prefer typed, inspectable errors over opaque failure paths
 - `Generate responsibly`: generate the repetitive parts, keep the critical parts reviewable
 - `Agent-operable`: everything important should be discoverable through docs, schemas, examples, CLI output, or MCP tools
 - `Performance-aware`: optimize runtime-facing and generated hot paths aggressively, while keeping tooling layers explicit and maintainable
@@ -99,6 +100,7 @@ The current spec layer now also carries:
 - explicit account `space` metadata for program-owned state
 - explicit instruction-account type references
 - explicit instruction lifecycle constraints such as `init`, `payer`, and `rentExempt`
+- explicit account relationship constraints such as `hasOne`
 
 Generated Rust skeletons now depend on `aqami-runtime` instead of re-declaring their own local descriptor surface.
 That gives AQAMI its first shared runtime contract between spec normalization, code generation, and generated projects.

@@ -380,6 +380,14 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     {
         runtime_imports.push("InstructionAccountConstraintDescriptor");
     }
+    if instruction.accounts.iter().any(|account| {
+        account
+            .constraints
+            .as_ref()
+            .is_some_and(|constraints| !constraints.has_one.is_empty())
+    }) {
+        runtime_imports.push("HasOneConstraintDescriptor");
+    }
     writeln!(
         &mut output,
         "use aqami_runtime::{{{}}};",
@@ -543,6 +551,9 @@ fn push_instruction_account_metadata_comment(
         if constraints.rent_exempt {
             parts.push("rent_exempt".to_string());
         }
+        for relation in &constraints.has_one {
+            parts.push(format!("has_one={}->{}", relation.field, relation.account));
+        }
     }
     writeln!(output, "{prefix}/// {}", parts.join(", ")).expect("string write should succeed");
 }
@@ -612,14 +623,34 @@ fn option_u64_literal(value: Option<u64>) -> String {
 fn render_constraint_literal(account: &NormalizedInstructionAccount) -> String {
     match account.constraints.as_ref() {
         Some(constraints) => format!(
-            "Some(InstructionAccountConstraintDescriptor {{ init: {}, payer: {}, close_to: {}, rent_exempt: {} }})",
+            "Some(InstructionAccountConstraintDescriptor {{ init: {}, payer: {}, close_to: {}, rent_exempt: {}, has_one: {} }})",
             constraints.init,
             option_str_literal(constraints.payer.as_deref()),
             option_str_literal(constraints.close_to.as_deref()),
-            constraints.rent_exempt
+            constraints.rent_exempt,
+            render_has_one_literal(&constraints.has_one),
         ),
         None => "None".to_string(),
     }
+}
+
+fn render_has_one_literal(constraints: &[aqami_spec::NormalizedHasOneConstraint]) -> String {
+    if constraints.is_empty() {
+        return "&[]".to_string();
+    }
+
+    let members = constraints
+        .iter()
+        .map(|constraint| {
+            format!(
+                "HasOneConstraintDescriptor {{ field: \"{}\", account: \"{}\" }}",
+                constraint.field, constraint.account
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!("&[{members}]")
 }
 
 fn instruction_account_role_name(role: &aqami_spec::InstructionAccountRole) -> &'static str {

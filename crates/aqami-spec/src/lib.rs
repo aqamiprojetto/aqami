@@ -8,14 +8,14 @@ pub use inspect::ProjectInspection;
 pub use load::{LoadedProjectSpec, SpecLoadError, load_project_spec};
 pub use model::{
     AccountOwner, AccountSpec, AqamiProjectSpec, Cluster, EventSpec, FieldSpec, FrameworkErrorSpec,
-    InstructionAccountConstraintsSpec, InstructionAccountRole, InstructionAccountSpec,
-    InstructionSpec, PackageSpec, PdaSpec, ProgramSpec, SeedKind, SeedSpec,
+    HasOneConstraintSpec, InstructionAccountConstraintsSpec, InstructionAccountRole,
+    InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec, ProgramSpec, SeedKind, SeedSpec,
 };
 pub use normalize::{
     NormalizedAccount, NormalizedAccountOwner, NormalizedError, NormalizedEvent, NormalizedField,
-    NormalizedInstruction, NormalizedInstructionAccount, NormalizedInstructionAccountConstraints,
-    NormalizedPackage, NormalizedPda, NormalizedProgram, NormalizedProjectSpec,
-    normalization_diagnostics, normalize_project_spec, rust_type_name,
+    NormalizedHasOneConstraint, NormalizedInstruction, NormalizedInstructionAccount,
+    NormalizedInstructionAccountConstraints, NormalizedPackage, NormalizedPda, NormalizedProgram,
+    NormalizedProjectSpec, normalization_diagnostics, normalize_project_spec, rust_type_name,
 };
 pub use validate::{Diagnostic, ValidationOutcome, validate_project_spec};
 

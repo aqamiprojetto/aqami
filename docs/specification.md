@@ -137,6 +137,7 @@ Account definitions should aim to describe:
 - field layout
 - ownership expectations
 - seed relationships when used as a PDA
+- identity relationships used by instructions, such as authority or beneficiary links
 - versioning or migration notes if relevant later
 
 Future tooling should be able to inspect an account definition and answer:
@@ -158,6 +159,7 @@ Instruction definitions should be explicit about:
 - declared account types when an instruction account maps to a program-owned state account
 - lifecycle constraints such as initialization, payer, close target, and rent-exempt expectations
 - space expectations inherited from declared account types
+- account relationship constraints such as `hasOne`
 - signer requirements
 - mutability
 - PDA expectations
@@ -170,6 +172,18 @@ The long-term goal is that an agent can generate or review an instruction implem
 When an instruction account represents a concrete program account type, the spec should declare that explicitly rather than relying on naming conventions alone.
 When an instruction account is initialized or closed in a specific instruction, that lifecycle behavior should be declared on the instruction account binding rather than hidden in generator templates.
 When an initialized instruction account targets a program-owned account type, the declared account type should carry explicit `space` so both generation and runtime validation remain deterministic.
+When an instruction depends on identity links inside account data, those links should be declared explicitly through structured constraints such as `hasOne` instead of being implied by field names or handwritten comments.
+
+Recommended `hasOne` shape:
+
+```yaml
+constraints:
+  hasOne:
+    - field: "authority"
+      account: "authority"
+```
+
+AQAMI should prefer this explicit object form over shorthand strings because agents and generators should not have to infer whether the compared field and instruction account name are meant to be the same thing.
 
 ## PDA Modeling Rules
 

@@ -20,6 +20,13 @@ pub enum RuntimeValidationError {
     },
     #[error("program-owned initialized account `{account}` must declare space")]
     InitWithoutSpace { account: &'static str },
+    #[error(
+        "`has_one` on account `{account}` references unknown instruction account `{related_account}`"
+    )]
+    UnknownHasOneAccount {
+        account: &'static str,
+        related_account: &'static str,
+    },
 }
 
 pub fn validate_instruction_accounts(
@@ -66,6 +73,18 @@ pub fn validate_instruction_accounts(
                 });
             }
         }
+
+        for relation in constraints.has_one {
+            if !accounts
+                .iter()
+                .any(|candidate| candidate.name == relation.account)
+            {
+                return Err(RuntimeValidationError::UnknownHasOneAccount {
+                    account: account.name,
+                    related_account: relation.account,
+                });
+            }
+        }
     }
 
     Ok(())
@@ -74,8 +93,8 @@ pub fn validate_instruction_accounts(
 #[cfg(test)]
 mod tests {
     use crate::{
-        AccountOwner, InstructionAccountConstraintDescriptor, InstructionAccountDescriptor,
-        InstructionAccountRoleDescriptor,
+        AccountOwner, HasOneConstraintDescriptor, InstructionAccountConstraintDescriptor,
+        InstructionAccountDescriptor, InstructionAccountRoleDescriptor,
     };
 
     use super::*;
@@ -108,6 +127,7 @@ mod tests {
                     payer: Some("payer"),
                     close_to: None,
                     rent_exempt: true,
+                    has_one: &[],
                 }),
             },
         ];
@@ -143,6 +163,7 @@ mod tests {
                     payer: Some("payer"),
                     close_to: None,
                     rent_exempt: true,
+                    has_one: &[],
                 }),
             },
         ];
@@ -150,6 +171,38 @@ mod tests {
         assert_eq!(
             validate_instruction_accounts(&accounts),
             Err(RuntimeValidationError::InitWithoutSpace { account: "escrow" })
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_has_one_account_reference() {
+        let accounts = [InstructionAccountDescriptor {
+            name: "escrow",
+            role: InstructionAccountRoleDescriptor::Account,
+            account_type: Some("Escrow"),
+            owner: Some(AccountOwner::Program),
+            space: Some(128),
+            is_mut: true,
+            is_signer: false,
+            pda: Some("escrow_pda"),
+            constraints: Some(InstructionAccountConstraintDescriptor {
+                init: false,
+                payer: None,
+                close_to: None,
+                rent_exempt: false,
+                has_one: &[HasOneConstraintDescriptor {
+                    field: "depositor",
+                    account: "depositor",
+                }],
+            }),
+        }];
+
+        assert_eq!(
+            validate_instruction_accounts(&accounts),
+            Err(RuntimeValidationError::UnknownHasOneAccount {
+                account: "escrow",
+                related_account: "depositor",
+            })
         );
     }
 }

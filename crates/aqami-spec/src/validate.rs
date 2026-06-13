@@ -450,4 +450,25 @@ mod tests {
 
         assert_eq!(normalized.programs[0].instructions.len(), 2);
     }
+
+    #[test]
+    fn has_one_references_must_exist() {
+        let (mut project, _) = parse_example();
+        project.programs[0].instructions[1].accounts[2]
+            .constraints
+            .as_mut()
+            .expect("release_escrow should have constraints")
+            .has_one[0]
+            .account = "missing_authority".to_string();
+        let raw_value = serde_json::to_value(&project).expect("project should serialize");
+
+        let outcome = validate_project_spec(&project, &raw_value);
+
+        assert!(!outcome.is_valid);
+        assert!(outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("references unknown instruction account `missing_authority`")
+        }));
+    }
 }

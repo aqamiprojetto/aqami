@@ -5,8 +5,9 @@ use serde::Serialize;
 
 use crate::{
     AccountOwner, AccountSpec, AqamiProjectSpec, Cluster, Diagnostic, EventSpec, FieldSpec,
-    FrameworkErrorSpec, InstructionAccountConstraintsSpec, InstructionAccountRole,
-    InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec, ProgramSpec, SeedSpec,
+    FrameworkErrorSpec, HasOneConstraintSpec, InstructionAccountConstraintsSpec,
+    InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec,
+    ProgramSpec, SeedSpec,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +110,13 @@ pub struct NormalizedInstructionAccountConstraints {
     pub payer: Option<String>,
     pub close_to: Option<String>,
     pub rent_exempt: bool,
+    pub has_one: Vec<NormalizedHasOneConstraint>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NormalizedHasOneConstraint {
+    pub field: String,
+    pub account: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -369,6 +377,66 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                         }
                     }
 
+                    if !constraints.has_one.is_empty() && account.account_type.is_none() {
+                        diagnostics.push(Diagnostic {
+                            location: format!("{account_location}.accountType"),
+                            message:
+                                "instruction accounts with `constraints.hasOne` must declare `accountType`"
+                                    .to_string(),
+                        });
+                    }
+
+                    if let Some(account_type) = account.account_type.as_deref()
+                        && let Some(declared_account) = program
+                            .accounts
+                            .iter()
+                            .find(|candidate| candidate.name == account_type)
+                    {
+                        for (has_one_index, has_one) in constraints.has_one.iter().enumerate() {
+                            match declared_account
+                                .fields
+                                .iter()
+                                .find(|field| field.name == has_one.field)
+                            {
+                                Some(field) if field.field_type == "pubkey" => {}
+                                Some(field) => diagnostics.push(Diagnostic {
+                                    location: format!(
+                                        "{account_location}.constraints.hasOne[{has_one_index}].field"
+                                    ),
+                                    message: format!(
+                                        "`constraints.hasOne` field `{}` on account type `{account_type}` must use AQAMI type `pubkey`, found `{}`",
+                                        has_one.field, field.field_type
+                                    ),
+                                }),
+                                None => diagnostics.push(Diagnostic {
+                                    location: format!(
+                                        "{account_location}.constraints.hasOne[{has_one_index}].field"
+                                    ),
+                                    message: format!(
+                                        "`constraints.hasOne` references unknown field `{}` on account type `{account_type}`",
+                                        has_one.field
+                                    ),
+                                }),
+                            }
+
+                            if !instruction
+                                .accounts
+                                .iter()
+                                .any(|candidate| candidate.name == has_one.account)
+                            {
+                                diagnostics.push(Diagnostic {
+                                    location: format!(
+                                        "{account_location}.constraints.hasOne[{has_one_index}].account"
+                                    ),
+                                    message: format!(
+                                        "`constraints.hasOne` references unknown instruction account `{}`",
+                                        has_one.account
+                                    ),
+                                });
+                            }
+                        }
+                    }
+
                     if let Some(payer) = constraints.payer.as_deref() {
                         match instruction.accounts.iter().find(|candidate| candidate.name == payer) {
                             Some(payer_account) => {
@@ -607,6 +675,18 @@ fn build_normalized_instruction_account_constraints(
         payer: constraints.payer.clone(),
         close_to: constraints.close_to.clone(),
         rent_exempt: constraints.rent_exempt,
+        has_one: constraints
+            .has_one
+            .iter()
+            .map(build_normalized_has_one)
+            .collect(),
+    }
+}
+
+fn build_normalized_has_one(constraint: &HasOneConstraintSpec) -> NormalizedHasOneConstraint {
+    NormalizedHasOneConstraint {
+        field: constraint.field.clone(),
+        account: constraint.account.clone(),
     }
 }
 
@@ -804,6 +884,13 @@ mod tests {
                 .as_ref()
                 .is_some_and(|constraints| constraints.init && constraints.rent_exempt)
         );
+        assert_eq!(
+            normalized.programs[0].instructions[1].accounts[2]
+                .constraints
+                .as_ref()
+                .map(|constraints| constraints.has_one.len()),
+            Some(2)
+        );
     }
 
     #[test]
@@ -864,5 +951,19 @@ mod tests {
                 .message
                 .contains("program-owned account types should declare `space`")
         }));
+    }
+
+    #[test]
+    fn has_one_requires_pubkey_fields() {
+        let mut project = example_project();
+        project.programs[0].accounts[0].fields[0].field_type = "u64".to_string();
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message.contains("must use AQAMI type `pubkey`") })
+        );
     }
 }

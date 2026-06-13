@@ -67,6 +67,7 @@ Today AQAMI includes:
 - deterministic Rust skeleton generation
 - explicit account ownership and instruction lifecycle semantics in the spec
 - explicit program-owned account space semantics in the spec
+- explicit `hasOne` relationship semantics in the spec
 
 The main implementation crates are:
 

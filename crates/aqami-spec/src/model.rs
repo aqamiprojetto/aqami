@@ -116,6 +116,14 @@ pub struct InstructionAccountConstraintsSpec {
     pub close_to: Option<String>,
     #[serde(default)]
     pub rent_exempt: bool,
+    #[serde(default)]
+    pub has_one: Vec<HasOneConstraintSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HasOneConstraintSpec {
+    pub field: String,
+    pub account: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

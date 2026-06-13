@@ -174,6 +174,18 @@ It should be:
 The runtime layer provides explicit primitives and helpers.
 It should avoid surprising behavior and should make Solana constraints easier to express correctly.
 
+## Error Handling Position
+
+AQAMI should treat error surfaces as part of the framework contract.
+
+That means:
+
+- schema, semantic, and normalization failures should produce direct diagnostics tied to the violated invariant
+- stable crate and generated-code boundaries should prefer typed error enums
+- dynamic or opaque error handling should not become the long-term public framework surface
+
+Internal implementation details may still use contextual error plumbing where appropriate, but AQAMI should not ask future users or agents to reverse-engineer what a failure actually means.
+
 ### CLI Layer
 
 The CLI should be the operational entrypoint for humans, CI, and later MCP.

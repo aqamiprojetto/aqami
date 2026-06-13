@@ -29,6 +29,13 @@ pub struct InstructionAccountConstraintDescriptor {
     pub payer: Option<&'static str>,
     pub close_to: Option<&'static str>,
     pub rent_exempt: bool,
+    pub has_one: &'static [HasOneConstraintDescriptor],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HasOneConstraintDescriptor {
+    pub field: &'static str,
+    pub account: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

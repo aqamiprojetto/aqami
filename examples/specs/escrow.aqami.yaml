@@ -76,6 +76,12 @@ programs:
             accountType: "Escrow"
             isMut: true
             pda: "escrow_pda"
+            constraints:
+              hasOne:
+                - field: "depositor"
+                  account: "depositor"
+                - field: "beneficiary"
+                  account: "beneficiary"
         args: []
         emits:
           - "EscrowReleased"
