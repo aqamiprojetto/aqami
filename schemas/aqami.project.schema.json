@@ -270,6 +270,24 @@
           "items": {
             "$ref": "#/$defs/seed"
           }
+        },
+        "bump": {
+          "$ref": "#/$defs/pdaBump"
+        }
+      }
+    },
+    "pdaBump": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["canonical", "arg"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

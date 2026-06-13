@@ -56,6 +56,7 @@ Suggested responsibilities:
   - account traits and helpers
   - instruction and error primitives
   - shared descriptor types consumed by generated code
+  - shared PDA descriptor types consumed by generated code
   - serialization boundaries
   - Solana-specific validation helpers
   - reusable runtime utilities

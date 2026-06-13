@@ -198,6 +198,36 @@ That means a spec should allow tools to reason about:
 
 This is one of the highest-value areas for agent support because LLMs frequently make PDA mistakes when left to infer patterns from prose alone.
 
+For PDA bumps, AQAMI should also prefer explicit metadata over convention.
+The current spec supports:
+
+- `canonical`
+- `arg`
+
+Recommended shape:
+
+```yaml
+pdas:
+  - name: "vault_pda"
+    seeds:
+      - kind: "const"
+        value: "vault"
+      - kind: "account_key"
+        value: "authority"
+    bump:
+      kind: "canonical"
+```
+
+Or:
+
+```yaml
+bump:
+  kind: "arg"
+  value: "vault_bump"
+```
+
+That keeps future generation, diagnostics, and MCP tooling aligned around a machine-readable derivation model instead of handwritten assumptions.
+
 ## Generation Hints
 
 Generation hints can be useful, but they are not the semantic core.

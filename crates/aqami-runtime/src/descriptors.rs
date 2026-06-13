@@ -17,6 +17,39 @@ pub enum InstructionAccountRoleDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdaSeedKindDescriptor {
+    Const,
+    Arg,
+    AccountField,
+    AccountKey,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdaSeedDescriptor {
+    pub kind: PdaSeedKindDescriptor,
+    pub value: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdaBumpKindDescriptor {
+    Canonical,
+    Arg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdaBumpDescriptor {
+    pub kind: PdaBumpKindDescriptor,
+    pub value: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdaDescriptor {
+    pub name: &'static str,
+    pub seeds: &'static [PdaSeedDescriptor],
+    pub bump: Option<PdaBumpDescriptor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountTypeDescriptor {
     pub name: &'static str,
     pub owner: AccountOwner,

@@ -101,6 +101,7 @@ The current spec layer now also carries:
 - explicit instruction-account type references
 - explicit instruction lifecycle constraints such as `init`, `payer`, and `rentExempt`
 - explicit account relationship constraints such as `hasOne`
+- explicit PDA bump semantics
 
 Generated Rust skeletons now depend on `aqami-runtime` instead of re-declaring their own local descriptor surface.
 That gives AQAMI its first shared runtime contract between spec normalization, code generation, and generated projects.

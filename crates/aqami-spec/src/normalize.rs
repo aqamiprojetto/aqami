@@ -6,8 +6,8 @@ use serde::Serialize;
 use crate::{
     AccountOwner, AccountSpec, AqamiProjectSpec, Cluster, Diagnostic, EventSpec, FieldSpec,
     FrameworkErrorSpec, HasOneConstraintSpec, InstructionAccountConstraintsSpec,
-    InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec,
-    ProgramSpec, SeedSpec,
+    InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaBumpKind,
+    PdaBumpSpec, PdaSpec, ProgramSpec, SeedSpec,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +125,19 @@ pub struct NormalizedPda {
     pub docs: Option<String>,
     pub rust_const_name: String,
     pub seeds: Vec<SeedSpec>,
+    pub bump: Option<NormalizedPdaBump>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NormalizedPdaBump {
+    pub kind: NormalizedPdaBumpKind,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub enum NormalizedPdaBumpKind {
+    Canonical,
+    Arg,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -696,6 +709,17 @@ fn build_normalized_pda(pda: &PdaSpec) -> NormalizedPda {
         docs: pda.docs.clone(),
         rust_const_name: normalize_shouty_identifier(&pda.name),
         seeds: pda.seeds.clone(),
+        bump: pda.bump.as_ref().map(build_normalized_pda_bump),
+    }
+}
+
+fn build_normalized_pda_bump(bump: &PdaBumpSpec) -> NormalizedPdaBump {
+    NormalizedPdaBump {
+        kind: match bump.kind {
+            PdaBumpKind::Canonical => NormalizedPdaBumpKind::Canonical,
+            PdaBumpKind::Arg => NormalizedPdaBumpKind::Arg,
+        },
+        value: bump.value.clone(),
     }
 }
 
@@ -890,6 +914,13 @@ mod tests {
                 .as_ref()
                 .map(|constraints| constraints.has_one.len()),
             Some(2)
+        );
+        assert_eq!(
+            normalized.programs[0].pdas[0]
+                .bump
+                .as_ref()
+                .map(|bump| &bump.kind),
+            Some(&NormalizedPdaBumpKind::Canonical)
         );
     }
 

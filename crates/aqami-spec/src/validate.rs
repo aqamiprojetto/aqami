@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::{
     AqamiProjectSpec, FrameworkErrorSpec, InstructionAccountRole, InstructionSpec,
-    PROJECT_SCHEMA_JSON, PdaSpec, SeedKind, SeedSpec, normalization_diagnostics,
+    PROJECT_SCHEMA_JSON, PdaBumpKind, PdaSpec, SeedKind, SeedSpec, normalization_diagnostics,
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -224,6 +224,16 @@ fn validate_instruction_references(
                             &known_instruction_accounts,
                         );
                     }
+
+                    if let Some(bump) = program_pda.bump.as_ref() {
+                        validate_pda_bump_reference(
+                            diagnostics,
+                            bump.kind.clone(),
+                            bump.value.as_deref(),
+                            &format!("{account_location}.pda.bump"),
+                            &known_instruction_args,
+                        );
+                    }
                 }
                 None => diagnostics.push(Diagnostic {
                     location: format!("{account_location}.pda"),
@@ -278,6 +288,41 @@ fn validate_instruction_references(
                 location: format!("{instruction_location}.errors[{error_index}]"),
                 message: format!("references unknown error `{error_name}`"),
             });
+        }
+    }
+}
+
+fn validate_pda_bump_reference(
+    diagnostics: &mut Vec<Diagnostic>,
+    kind: PdaBumpKind,
+    value: Option<&str>,
+    location: &str,
+    known_instruction_args: &HashSet<&str>,
+) {
+    match kind {
+        PdaBumpKind::Canonical => {
+            if value.is_some() {
+                diagnostics.push(Diagnostic {
+                    location: format!("{location}.value"),
+                    message: "canonical PDA bumps must not declare `value`".to_string(),
+                });
+            }
+        }
+        PdaBumpKind::Arg => {
+            let Some(value) = value else {
+                diagnostics.push(Diagnostic {
+                    location: format!("{location}.value"),
+                    message: "arg-backed PDA bumps must declare `value`".to_string(),
+                });
+                return;
+            };
+
+            if !known_instruction_args.contains(value) {
+                diagnostics.push(Diagnostic {
+                    location: format!("{location}.value"),
+                    message: format!("PDA bump references unknown instruction argument `{value}`"),
+                });
+            }
         }
     }
 }
@@ -449,6 +494,25 @@ mod tests {
         let normalized = normalize_project_spec(&project).expect("example should normalize");
 
         assert_eq!(normalized.programs[0].instructions.len(), 2);
+    }
+
+    #[test]
+    fn arg_bump_requires_known_instruction_argument() {
+        let (mut project, _) = parse_example();
+        project.programs[0].pdas[0].bump = Some(crate::PdaBumpSpec {
+            kind: crate::PdaBumpKind::Arg,
+            value: Some("missing_bump".to_string()),
+        });
+        let raw_value = serde_json::to_value(&project).expect("project should serialize");
+
+        let outcome = validate_project_spec(&project, &raw_value);
+
+        assert!(!outcome.is_valid);
+        assert!(outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("PDA bump references unknown instruction argument `missing_bump`")
+        }));
     }
 
     #[test]

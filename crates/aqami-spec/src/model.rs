@@ -131,6 +131,7 @@ pub struct PdaSpec {
     pub name: String,
     pub docs: Option<String>,
     pub seeds: Vec<SeedSpec>,
+    pub bump: Option<PdaBumpSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,6 +147,20 @@ pub enum SeedKind {
     Arg,
     AccountField,
     AccountKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PdaBumpSpec {
+    pub kind: PdaBumpKind,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PdaBumpKind {
+    Canonical,
+    Arg,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

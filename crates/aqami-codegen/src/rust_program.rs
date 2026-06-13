@@ -7,8 +7,8 @@ use std::{
 
 use aqami_spec::{
     NormalizedAccount, NormalizedAccountOwner, NormalizedError, NormalizedEvent,
-    NormalizedInstruction, NormalizedInstructionAccount, NormalizedPda, NormalizedProgram,
-    NormalizedProjectSpec, SeedKind,
+    NormalizedInstruction, NormalizedInstructionAccount, NormalizedPda, NormalizedPdaBumpKind,
+    NormalizedProgram, NormalizedProjectSpec, SeedKind,
 };
 use heck::ToUpperCamelCase;
 use thiserror::Error;
@@ -271,6 +271,13 @@ fn render_pdas_rs(pdas: &[NormalizedPda]) -> String {
         return output;
     }
 
+    writeln!(
+        &mut output,
+        "use aqami_runtime::{{PdaBumpDescriptor, PdaBumpKindDescriptor, PdaDescriptor, PdaSeedDescriptor, PdaSeedKindDescriptor}};"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+
     for pda in pdas {
         push_doc_comment(&mut output, 0, pda.docs.as_deref());
         writeln!(
@@ -279,6 +286,16 @@ fn render_pdas_rs(pdas: &[NormalizedPda]) -> String {
             pda.rust_const_name, pda.name
         )
         .expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "pub const {}_DESCRIPTOR: PdaDescriptor = PdaDescriptor {{ name: \"{}\", seeds: {}, bump: {} }};",
+            pda.rust_const_name,
+            pda.name,
+            render_pda_seeds_literal(&pda.seeds),
+            render_pda_bump_literal(pda),
+        )
+        .expect("string write should succeed");
+        writeln!(&mut output).expect("string write should succeed");
         writeln!(
             &mut output,
             "pub fn {}_seed_descriptions() -> &'static [&'static str] {{",
@@ -296,6 +313,19 @@ fn render_pdas_rs(pdas: &[NormalizedPda]) -> String {
             .expect("string write should succeed");
         }
         writeln!(&mut output, "    ]").expect("string write should succeed");
+        writeln!(&mut output, "}}").expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "pub fn {}_bump_description() -> Option<&'static str> {{",
+            pda.rust_const_name.to_ascii_lowercase()
+        )
+        .expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "    {}",
+            render_pda_bump_description_literal(pda)
+        )
+        .expect("string write should succeed");
         writeln!(&mut output, "}}").expect("string write should succeed");
         writeln!(&mut output).expect("string write should succeed");
     }
@@ -571,6 +601,70 @@ fn seed_kind_name(kind: &SeedKind) -> &'static str {
     }
 }
 
+fn seed_kind_variant_name(kind: &SeedKind) -> &'static str {
+    match kind {
+        SeedKind::Const => "Const",
+        SeedKind::Arg => "Arg",
+        SeedKind::AccountField => "AccountField",
+        SeedKind::AccountKey => "AccountKey",
+    }
+}
+
+fn render_pda_seeds_literal(seeds: &[aqami_spec::SeedSpec]) -> String {
+    if seeds.is_empty() {
+        return "&[]".to_string();
+    }
+
+    let members = seeds
+        .iter()
+        .map(|seed| {
+            format!(
+                "PdaSeedDescriptor {{ kind: PdaSeedKindDescriptor::{}, value: \"{}\" }}",
+                seed_kind_variant_name(&seed.kind),
+                seed.value
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!("&[{members}]")
+}
+
+fn render_pda_bump_literal(pda: &NormalizedPda) -> String {
+    match pda.bump.as_ref() {
+        Some(bump) => format!(
+            "Some(PdaBumpDescriptor {{ kind: PdaBumpKindDescriptor::{}, value: {} }})",
+            pda_bump_kind_variant_name(&bump.kind),
+            option_str_literal(bump.value.as_deref())
+        ),
+        None => "None".to_string(),
+    }
+}
+
+fn render_pda_bump_description_literal(pda: &NormalizedPda) -> String {
+    match pda.bump.as_ref() {
+        Some(bump) => match bump.value.as_deref() {
+            Some(value) => format!("Some(\"{}: {}\")", pda_bump_kind_name(&bump.kind), value),
+            None => format!("Some(\"{}\")", pda_bump_kind_name(&bump.kind)),
+        },
+        None => "None".to_string(),
+    }
+}
+
+fn pda_bump_kind_variant_name(kind: &NormalizedPdaBumpKind) -> &'static str {
+    match kind {
+        NormalizedPdaBumpKind::Canonical => "Canonical",
+        NormalizedPdaBumpKind::Arg => "Arg",
+    }
+}
+
+fn pda_bump_kind_name(kind: &NormalizedPdaBumpKind) -> &'static str {
+    match kind {
+        NormalizedPdaBumpKind::Canonical => "canonical",
+        NormalizedPdaBumpKind::Arg => "arg",
+    }
+}
+
 fn account_owner_variant_name(owner: &NormalizedAccountOwner) -> &'static str {
     match owner {
         NormalizedAccountOwner::Program => "Program",
@@ -701,6 +795,8 @@ mod tests {
                 .expect("generated instruction should exist");
         let account_rs = fs::read_to_string(output_dir.join("src/state/escrow.rs"))
             .expect("generated account should exist");
+        let pda_rs = fs::read_to_string(output_dir.join("src/pdas.rs"))
+            .expect("generated pdas.rs should exist");
 
         assert!(cargo_toml.contains("aqami-runtime = { path = "));
         assert!(lib_rs.contains("pub mod instructions;"));
@@ -712,6 +808,8 @@ mod tests {
         assert!(instruction_rs.contains("space=128"));
         assert!(account_rs.contains("pub const ACCOUNT_TYPE_DESCRIPTOR: AccountTypeDescriptor"));
         assert!(account_rs.contains("space: Some(128)"));
+        assert!(pda_rs.contains("pub const ESCROW_PDA_DESCRIPTOR: PdaDescriptor"));
+        assert!(pda_rs.contains("PdaBumpKindDescriptor::Canonical"));
         assert!(instruction_rs.contains("todo!(\"Implement create_escrow\")"));
     }
 }
