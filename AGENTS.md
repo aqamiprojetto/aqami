@@ -113,6 +113,13 @@ Important categories:
 - MCP capabilities
 - testing expectations
 
+Comment guidance:
+
+- document public and reusable surfaces clearly
+- add comments for invariants, security rules, and non-obvious tradeoffs
+- do not add comments that only restate the code
+- prefer examples and tests over long explanatory noise inside implementation files
+
 If a concept is central to future contributors or agents, document it before it becomes tribal knowledge.
 
 ## Tests And Verification

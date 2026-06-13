@@ -100,6 +100,7 @@ The current spec layer now also carries:
 - explicit account `space` metadata for program-owned state
 - explicit instruction-account type references
 - explicit instruction lifecycle constraints such as `init`, `payer`, and `rentExempt`
+- explicit close semantics through `closeTo`
 - explicit account relationship constraints such as `hasOne`
 - explicit PDA bump semantics
 
@@ -149,6 +150,7 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - `crates/aqami-codegen`: deterministic Rust skeleton generation from normalized specs
 - `crates/aqami-runtime`: shared account and instruction descriptor types plus runtime validation helpers
 - [`docs/architecture.md`](./docs/architecture.md): planned system boundaries and workspace layout
+- [`docs/documentation-guidelines.md`](./docs/documentation-guidelines.md): how AQAMI should document public surfaces and use comments
 - [`docs/roadmap.md`](./docs/roadmap.md): long-term project arc from foundation to usable framework
 - [`docs/performance.md`](./docs/performance.md): performance values and optimization priorities
 - [`docs/specification.md`](./docs/specification.md): spec-first model, domain model, and authoring rules

@@ -173,6 +173,7 @@ When an instruction account represents a concrete program account type, the spec
 When an instruction account is initialized or closed in a specific instruction, that lifecycle behavior should be declared on the instruction account binding rather than hidden in generator templates.
 When an initialized instruction account targets a program-owned account type, the declared account type should carry explicit `space` so both generation and runtime validation remain deterministic.
 When an instruction depends on identity links inside account data, those links should be declared explicitly through structured constraints such as `hasOne` instead of being implied by field names or handwritten comments.
+When an instruction closes an account, the close target should be explicit through `closeTo`, and both the closing account and close target should be writable in the modeled surface.
 
 Recommended `hasOne` shape:
 

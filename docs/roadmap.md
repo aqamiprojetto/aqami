@@ -69,6 +69,7 @@ Today AQAMI includes:
 - explicit program-owned account space semantics in the spec
 - explicit `hasOne` relationship semantics in the spec
 - explicit PDA bump semantics in the spec
+- explicit close-target semantics in the spec
 
 The main implementation crates are:
 

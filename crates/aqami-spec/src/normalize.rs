@@ -390,6 +390,24 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                         }
                     }
 
+                    if constraints.close_to.is_some() {
+                        if !account.is_mut {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.isMut"),
+                                message: "closed instruction accounts must set `isMut` to true"
+                                    .to_string(),
+                            });
+                        }
+                        if constraints.init {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.constraints"),
+                                message:
+                                    "instruction accounts cannot declare both `constraints.init` and `constraints.closeTo`"
+                                        .to_string(),
+                            });
+                        }
+                    }
+
                     if !constraints.has_one.is_empty() && account.account_type.is_none() {
                         diagnostics.push(Diagnostic {
                             location: format!("{account_location}.accountType"),
@@ -471,18 +489,31 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                         }
                     }
 
-                    if let Some(close_to) = constraints.close_to.as_deref()
-                        && !instruction
+                    if let Some(close_to) = constraints.close_to.as_deref() {
+                        match instruction
                             .accounts
                             .iter()
-                            .any(|candidate| candidate.name == close_to)
-                    {
-                        diagnostics.push(Diagnostic {
-                            location: format!("{account_location}.constraints.closeTo"),
-                            message: format!(
-                                "constraints.closeTo references unknown instruction account `{close_to}`"
-                            ),
-                        });
+                            .find(|candidate| candidate.name == close_to)
+                        {
+                            Some(close_target) => {
+                                if !close_target.is_mut {
+                                    diagnostics.push(Diagnostic {
+                                        location: format!(
+                                            "{account_location}.constraints.closeTo"
+                                        ),
+                                        message: format!(
+                                            "close target account `{close_to}` must set `isMut` to true"
+                                        ),
+                                    });
+                                }
+                            }
+                            None => diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.constraints.closeTo"),
+                                message: format!(
+                                    "constraints.closeTo references unknown instruction account `{close_to}`"
+                                ),
+                            }),
+                        }
                     }
                 }
             }
@@ -996,5 +1027,43 @@ mod tests {
                 .iter()
                 .any(|diagnostic| { diagnostic.message.contains("must use AQAMI type `pubkey`") })
         );
+    }
+
+    #[test]
+    fn close_to_requires_mutable_account_and_target() {
+        let mut project = example_project();
+        project.programs[0].instructions[1].accounts[0].is_mut = false;
+        project.programs[0].instructions[1].accounts[2].is_mut = false;
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("closed instruction accounts must set `isMut` to true")
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("close target account `depositor` must set `isMut` to true")
+        }));
+    }
+
+    #[test]
+    fn init_and_close_conflict_is_reported() {
+        let mut project = example_project();
+        project.programs[0].instructions[0].accounts[2]
+            .constraints
+            .as_mut()
+            .expect("create_escrow should have constraints")
+            .close_to = Some("depositor".to_string());
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("cannot declare both `constraints.init` and `constraints.closeTo`")
+        }));
     }
 }

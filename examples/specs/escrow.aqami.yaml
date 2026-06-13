@@ -69,6 +69,7 @@ programs:
         accounts:
           - name: "depositor"
             role: "signer"
+            isMut: true
             isSigner: true
           - name: "beneficiary"
             role: "account"
@@ -79,6 +80,7 @@ programs:
             isMut: true
             pda: "escrow_pda"
             constraints:
+              closeTo: "depositor"
               hasOne:
                 - field: "depositor"
                   account: "depositor"
