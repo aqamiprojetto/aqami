@@ -93,6 +93,22 @@ Initial direction:
 
 For the earliest version, a single-file project spec is the simplest starting point.
 
+## Source Formats
+
+For now, AQAMI source specs should remain human- and agent-friendly text formats:
+
+- YAML for authoring convenience
+- JSON for machine interchange and tooling compatibility
+
+Binary schema-driven formats such as Protobuf may become useful later for:
+
+- CLI or MCP transport
+- cached compiled-spec artifacts
+- remote service boundaries
+
+But they are not the best primary authoring format yet.
+At this stage, easy review, editing, prompting, and diffing matter more than binary compactness.
+
 ## Required Top-Level Concepts
 
 The initial project spec should likely require:
@@ -134,6 +150,7 @@ Instruction definitions should be explicit about:
 
 - required accounts
 - account roles
+- declared account types when an instruction account maps to a program-owned state account
 - signer requirements
 - mutability
 - PDA expectations
@@ -142,6 +159,8 @@ Instruction definitions should be explicit about:
 - expected errors
 
 The long-term goal is that an agent can generate or review an instruction implementation without guessing the execution surface.
+
+When an instruction account represents a concrete program account type, the spec should declare that explicitly rather than relying on naming conventions alone.
 
 ## PDA Modeling Rules
 

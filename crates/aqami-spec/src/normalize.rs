@@ -9,6 +9,12 @@ use crate::{
     ProgramSpec, SeedSpec,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AccountBinding {
+    rust_module_name: String,
+    rust_type_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct NormalizedProjectSpec {
     pub spec_version: String,
@@ -73,12 +79,14 @@ pub struct NormalizedInstruction {
 pub struct NormalizedInstructionAccount {
     pub name: String,
     pub role: InstructionAccountRole,
+    pub account_type: Option<String>,
     pub is_mut: bool,
     pub is_signer: bool,
     pub pda: Option<String>,
     pub docs: Option<String>,
     pub rust_field_name: String,
     pub rust_type_name: String,
+    pub state_account_module_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -190,13 +198,16 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
             }),
         );
 
-        let known_account_types: HashMap<String, String> = program
+        let declared_account_names: HashMap<&str, AccountBinding> = program
             .accounts
             .iter()
             .map(|account| {
                 (
-                    normalize_snake_identifier(&account.name),
-                    normalize_upper_camel_identifier(&account.name),
+                    account.name.as_str(),
+                    AccountBinding {
+                        rust_module_name: normalize_snake_identifier(&account.name),
+                        rust_type_name: normalize_upper_camel_identifier(&account.name),
+                    },
                 )
             })
             .collect();
@@ -237,8 +248,36 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                     )
                 }),
             );
+            for (account_index, account) in instruction.accounts.iter().enumerate() {
+                let account_location = format!("{instruction_location}.accounts[{account_index}]");
 
-            let _ = &known_account_types;
+                if let Some(account_type) = account.account_type.as_deref() {
+                    if account.role != InstructionAccountRole::Account {
+                        diagnostics.push(Diagnostic {
+                            location: format!("{account_location}.role"),
+                            message:
+                                "`accountType` is only valid for instruction accounts with role `account`"
+                                    .to_string(),
+                        });
+                    }
+                    if !declared_account_names.contains_key(account_type) {
+                        diagnostics.push(Diagnostic {
+                            location: format!("{account_location}.accountType"),
+                            message: format!(
+                                "references unknown declared account type `{account_type}`"
+                            ),
+                        });
+                    }
+                }
+
+                if account.pda.is_some() && account.account_type.is_none() {
+                    diagnostics.push(Diagnostic {
+                        location: format!("{account_location}.accountType"),
+                        message: "PDA-backed instruction accounts must declare `accountType`"
+                            .to_string(),
+                    });
+                }
+            }
         }
     }
 
@@ -271,13 +310,29 @@ fn build_normalized_package(package: &PackageSpec) -> NormalizedPackage {
 }
 
 fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
-    let account_type_lookup: HashMap<String, String> = program
+    let account_binding_by_name: HashMap<String, AccountBinding> = program
+        .accounts
+        .iter()
+        .map(|account| {
+            (
+                account.name.clone(),
+                AccountBinding {
+                    rust_module_name: normalize_snake_identifier(&account.name),
+                    rust_type_name: normalize_upper_camel_identifier(&account.name),
+                },
+            )
+        })
+        .collect();
+    let account_binding_by_normalized_name: HashMap<String, AccountBinding> = program
         .accounts
         .iter()
         .map(|account| {
             (
                 normalize_snake_identifier(&account.name),
-                normalize_upper_camel_identifier(&account.name),
+                AccountBinding {
+                    rust_module_name: normalize_snake_identifier(&account.name),
+                    rust_type_name: normalize_upper_camel_identifier(&account.name),
+                },
             )
         })
         .collect();
@@ -296,7 +351,13 @@ fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
         instructions: program
             .instructions
             .iter()
-            .map(|instruction| build_normalized_instruction(instruction, &account_type_lookup))
+            .map(|instruction| {
+                build_normalized_instruction(
+                    instruction,
+                    &account_binding_by_name,
+                    &account_binding_by_normalized_name,
+                )
+            })
             .collect(),
         pdas: program.pdas.iter().map(build_normalized_pda).collect(),
         events: program.events.iter().map(build_normalized_event).collect(),
@@ -328,7 +389,8 @@ fn build_normalized_field(field: &FieldSpec) -> NormalizedField {
 
 fn build_normalized_instruction(
     instruction: &InstructionSpec,
-    account_type_lookup: &HashMap<String, String>,
+    account_binding_by_name: &HashMap<String, AccountBinding>,
+    account_binding_by_normalized_name: &HashMap<String, AccountBinding>,
 ) -> NormalizedInstruction {
     NormalizedInstruction {
         name: instruction.name.clone(),
@@ -338,7 +400,13 @@ fn build_normalized_instruction(
         accounts: instruction
             .accounts
             .iter()
-            .map(|account| build_normalized_instruction_account(account, account_type_lookup))
+            .map(|account| {
+                build_normalized_instruction_account(
+                    account,
+                    account_binding_by_name,
+                    account_binding_by_normalized_name,
+                )
+            })
             .collect(),
         args: instruction
             .args
@@ -352,17 +420,28 @@ fn build_normalized_instruction(
 
 fn build_normalized_instruction_account(
     account: &InstructionAccountSpec,
-    account_type_lookup: &HashMap<String, String>,
+    account_binding_by_name: &HashMap<String, AccountBinding>,
+    account_binding_by_normalized_name: &HashMap<String, AccountBinding>,
 ) -> NormalizedInstructionAccount {
+    let binding = resolve_instruction_account_binding(
+        account,
+        account_binding_by_name,
+        account_binding_by_normalized_name,
+    );
     NormalizedInstructionAccount {
         name: account.name.clone(),
         role: account.role.clone(),
+        account_type: account.account_type.clone(),
         is_mut: account.is_mut,
         is_signer: account.is_signer,
         pda: account.pda.clone(),
         docs: account.docs.clone(),
         rust_field_name: normalize_snake_identifier(&account.name),
-        rust_type_name: infer_instruction_account_rust_type(account, account_type_lookup),
+        rust_type_name: binding
+            .as_ref()
+            .map(|binding| binding.rust_type_name.clone())
+            .unwrap_or_else(|| "Pubkey".to_string()),
+        state_account_module_name: binding.map(|binding| binding.rust_module_name),
     }
 }
 
@@ -446,10 +525,11 @@ fn push_normalized_identifier_collision_diagnostics<'a>(
     }
 }
 
-fn infer_instruction_account_rust_type(
+fn resolve_instruction_account_binding(
     account: &InstructionAccountSpec,
-    account_type_lookup: &HashMap<String, String>,
-) -> String {
+    account_binding_by_name: &HashMap<String, AccountBinding>,
+    account_binding_by_normalized_name: &HashMap<String, AccountBinding>,
+) -> Option<AccountBinding> {
     if matches!(
         account.role,
         InstructionAccountRole::SystemProgram
@@ -457,14 +537,17 @@ fn infer_instruction_account_rust_type(
             | InstructionAccountRole::Sysvar
             | InstructionAccountRole::Signer
     ) {
-        return "Pubkey".to_string();
+        return None;
+    }
+
+    if let Some(account_type) = account.account_type.as_ref() {
+        return account_binding_by_name.get(account_type).cloned();
     }
 
     let normalized_name = normalize_snake_identifier(&account.name);
-    account_type_lookup
+    account_binding_by_normalized_name
         .get(&normalized_name)
         .cloned()
-        .unwrap_or_else(|| "Pubkey".to_string())
 }
 
 pub fn rust_type_name(aqami_type: &str) -> Option<&'static str> {
@@ -527,6 +610,12 @@ mod tests {
             normalized.programs[0].instructions[0].accounts[2].rust_type_name,
             "Escrow"
         );
+        assert_eq!(
+            normalized.programs[0].instructions[0].accounts[2]
+                .state_account_module_name
+                .as_deref(),
+            Some("escrow")
+        );
     }
 
     #[test]
@@ -541,5 +630,19 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.message.contains("unsupported AQAMI type"))
         );
+    }
+
+    #[test]
+    fn pda_backed_instruction_account_requires_account_type() {
+        let mut project = example_project();
+        project.programs[0].instructions[0].accounts[2].account_type = None;
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("PDA-backed instruction accounts must declare `accountType`")
+        }));
     }
 }

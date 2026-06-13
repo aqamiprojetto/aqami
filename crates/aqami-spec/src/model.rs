@@ -76,6 +76,8 @@ pub struct InstructionSpec {
 pub struct InstructionAccountSpec {
     pub name: String,
     pub role: InstructionAccountRole,
+    #[serde(rename = "accountType")]
+    pub account_type: Option<String>,
     #[serde(default)]
     pub is_mut: bool,
     #[serde(default)]

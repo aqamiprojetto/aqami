@@ -6,8 +6,9 @@ use std::{
 };
 
 use aqami_spec::{
-    NormalizedAccount, NormalizedError, NormalizedEvent, NormalizedInstruction, NormalizedPda,
-    NormalizedProgram, NormalizedProjectSpec, SeedKind,
+    NormalizedAccount, NormalizedError, NormalizedEvent, NormalizedInstruction,
+    NormalizedInstructionAccount, NormalizedPda, NormalizedProgram, NormalizedProjectSpec,
+    SeedKind,
 };
 use heck::ToUpperCamelCase;
 use thiserror::Error;
@@ -338,12 +339,11 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     let account_imports = instruction
         .accounts
         .iter()
-        .filter(|account| account.rust_type_name != "Pubkey")
-        .map(|account| {
-            format!(
-                "state::{}::{}",
-                account.rust_field_name, account.rust_type_name
-            )
+        .filter_map(|account| {
+            account
+                .state_account_module_name
+                .as_ref()
+                .map(|module_name| format!("state::{module_name}::{}", account.rust_type_name))
         })
         .collect::<BTreeSet<_>>();
     for import in account_imports {
@@ -362,6 +362,7 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     .expect("string write should succeed");
     for account in &instruction.accounts {
         push_doc_comment(&mut output, 4, account.docs.as_deref());
+        push_instruction_account_metadata_comment(&mut output, 4, account);
         writeln!(
             &mut output,
             "    pub {}: {},",
@@ -414,6 +415,32 @@ fn push_doc_comment(output: &mut String, indent: usize, docs: Option<&str>) {
     }
 }
 
+fn push_instruction_account_metadata_comment(
+    output: &mut String,
+    indent: usize,
+    account: &NormalizedInstructionAccount,
+) {
+    let prefix = " ".repeat(indent);
+    let mut parts = Vec::with_capacity(4);
+    parts.push(format!(
+        "role={}",
+        instruction_account_role_name(&account.role)
+    ));
+    if let Some(account_type) = account.account_type.as_deref() {
+        parts.push(format!("account_type={account_type}"));
+    }
+    if account.is_mut {
+        parts.push("mut".to_string());
+    }
+    if account.is_signer {
+        parts.push("signer".to_string());
+    }
+    if let Some(pda) = account.pda.as_deref() {
+        parts.push(format!("pda={pda}"));
+    }
+    writeln!(output, "{prefix}/// {}", parts.join(", ")).expect("string write should succeed");
+}
+
 fn instruction_name_prefix(instruction: &NormalizedInstruction) -> String {
     instruction.rust_module_name.to_upper_camel_case()
 }
@@ -424,6 +451,16 @@ fn seed_kind_name(kind: &SeedKind) -> &'static str {
         SeedKind::Arg => "arg",
         SeedKind::AccountField => "account_field",
         SeedKind::AccountKey => "account_key",
+    }
+}
+
+fn instruction_account_role_name(role: &aqami_spec::InstructionAccountRole) -> &'static str {
+    match role {
+        aqami_spec::InstructionAccountRole::Account => "account",
+        aqami_spec::InstructionAccountRole::Signer => "signer",
+        aqami_spec::InstructionAccountRole::SystemProgram => "system_program",
+        aqami_spec::InstructionAccountRole::TokenProgram => "token_program",
+        aqami_spec::InstructionAccountRole::Sysvar => "sysvar",
     }
 }
 

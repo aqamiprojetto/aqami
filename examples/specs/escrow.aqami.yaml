@@ -40,6 +40,7 @@ programs:
             role: "account"
           - name: "escrow"
             role: "account"
+            accountType: "Escrow"
             isMut: true
             pda: "escrow_pda"
           - name: "system_program"
@@ -66,6 +67,7 @@ programs:
             isMut: true
           - name: "escrow"
             role: "account"
+            accountType: "Escrow"
             isMut: true
             pda: "escrow_pda"
         args: []

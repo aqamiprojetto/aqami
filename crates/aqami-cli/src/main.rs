@@ -1,13 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
-use aqami_codegen::generate_rust_programs;
+use aqami_codegen::{GenerateError, generate_rust_programs};
 use aqami_spec::{
-    Diagnostic, ProjectInspection, load_project_spec, normalize_project_spec, validate_project_spec,
+    Diagnostic, LoadedProjectSpec, ProjectInspection, SpecLoadError, load_project_spec,
+    normalize_project_spec, validate_project_spec,
 };
 use clap::{Parser, Subcommand, ValueEnum};
+use thiserror::Error;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), CliError> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -19,6 +20,36 @@ fn main() -> Result<()> {
             output_dir,
         } => generate_command(target, spec, output_dir),
     }
+}
+
+#[derive(Debug, Error)]
+enum CliError {
+    #[error("failed to load AQAMI spec from {path}: {source}")]
+    LoadSpec {
+        path: PathBuf,
+        #[source]
+        source: SpecLoadError,
+    },
+    #[error("failed to render {context} as JSON: {source}")]
+    RenderJson {
+        context: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("AQAMI spec validation failed")]
+    InvalidSpec,
+    #[error("cannot inspect an invalid AQAMI spec")]
+    InspectInvalidSpec,
+    #[error("AQAMI normalization failed:\n{diagnostics}")]
+    Normalization { diagnostics: String },
+    #[error("cannot generate from an invalid AQAMI spec")]
+    GenerateInvalidSpec,
+    #[error("failed to generate Rust program skeletons under {path}: {source}")]
+    GenerateRustProgram {
+        path: PathBuf,
+        #[source]
+        source: GenerateError,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -63,34 +94,26 @@ enum GenerateTarget {
     RustProgram,
 }
 
-fn validate_command(spec: PathBuf, format: OutputFormat) -> Result<()> {
-    let loaded = load_project_spec(&spec)
-        .with_context(|| format!("failed to load AQAMI spec from {}", spec.display()))?;
+fn validate_command(spec: PathBuf, format: OutputFormat) -> Result<(), CliError> {
+    let loaded = load_spec_with_cli_error(&spec)?;
     let outcome = validate_project_spec(&loaded.project, &loaded.raw_value);
 
     match format {
         OutputFormat::Text => {
             print_validation_text(&loaded.path, &loaded.project.package.name, &outcome)
         }
-        OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&outcome)
-                    .context("failed to render validation output as JSON")?
-            );
-        }
+        OutputFormat::Json => print_json("validation output", &outcome)?,
     }
 
     if outcome.is_valid {
         Ok(())
     } else {
-        bail!("AQAMI spec validation failed")
+        Err(CliError::InvalidSpec)
     }
 }
 
-fn inspect_command(spec: PathBuf, format: OutputFormat) -> Result<()> {
-    let loaded = load_project_spec(&spec)
-        .with_context(|| format!("failed to load AQAMI spec from {}", spec.display()))?;
+fn inspect_command(spec: PathBuf, format: OutputFormat) -> Result<(), CliError> {
+    let loaded = load_spec_with_cli_error(&spec)?;
     let outcome = validate_project_spec(&loaded.project, &loaded.raw_value);
 
     if !outcome.is_valid {
@@ -98,58 +121,46 @@ fn inspect_command(spec: PathBuf, format: OutputFormat) -> Result<()> {
             OutputFormat::Text => {
                 print_validation_text(&loaded.path, &loaded.project.package.name, &outcome)
             }
-            OutputFormat::Json => {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&outcome)
-                        .context("failed to render validation output as JSON")?
-                );
-            }
+            OutputFormat::Json => print_json("validation output", &outcome)?,
         }
-        bail!("cannot inspect an invalid AQAMI spec");
+        return Err(CliError::InspectInvalidSpec);
     }
 
     let inspection = ProjectInspection::from(&loaded.project);
 
     match format {
         OutputFormat::Text => print_inspection_text(&loaded.path, &inspection),
-        OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&inspection)
-                    .context("failed to render inspection output as JSON")?
-            );
-        }
+        OutputFormat::Json => print_json("inspection output", &inspection)?,
     }
 
     Ok(())
 }
 
-fn generate_command(target: GenerateTarget, spec: PathBuf, output_dir: PathBuf) -> Result<()> {
-    let loaded = load_project_spec(&spec)
-        .with_context(|| format!("failed to load AQAMI spec from {}", spec.display()))?;
+fn generate_command(
+    target: GenerateTarget,
+    spec: PathBuf,
+    output_dir: PathBuf,
+) -> Result<(), CliError> {
+    let loaded = load_spec_with_cli_error(&spec)?;
     let outcome = validate_project_spec(&loaded.project, &loaded.raw_value);
     if !outcome.is_valid {
         print_validation_text(&loaded.path, &loaded.project.package.name, &outcome);
-        bail!("cannot generate from an invalid AQAMI spec");
+        return Err(CliError::GenerateInvalidSpec);
     }
 
-    let normalized = normalize_project_spec(&loaded.project).map_err(|diagnostics| {
-        anyhow!(format_diagnostics(
-            "AQAMI normalization failed",
-            &diagnostics
-        ))
-    })?;
+    let normalized =
+        normalize_project_spec(&loaded.project).map_err(|diagnostics| CliError::Normalization {
+            diagnostics: format_diagnostics(&diagnostics),
+        })?;
 
     match target {
         GenerateTarget::RustProgram => {
-            let generated =
-                generate_rust_programs(&normalized, &output_dir).with_context(|| {
-                    format!(
-                        "failed to generate Rust program skeletons under {}",
-                        output_dir.display()
-                    )
-                })?;
+            let generated = generate_rust_programs(&normalized, &output_dir).map_err(|source| {
+                CliError::GenerateRustProgram {
+                    path: output_dir.clone(),
+                    source,
+                }
+            })?;
             println!("Generated Rust program skeletons:");
             for program in generated {
                 println!(
@@ -164,11 +175,21 @@ fn generate_command(target: GenerateTarget, spec: PathBuf, output_dir: PathBuf) 
     Ok(())
 }
 
-fn print_validation_text(
-    path: &std::path::Path,
-    package_name: &str,
-    outcome: &aqami_spec::ValidationOutcome,
-) {
+fn load_spec_with_cli_error(path: &Path) -> Result<LoadedProjectSpec, CliError> {
+    load_project_spec(path).map_err(|source| CliError::LoadSpec {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn print_json<T: serde::Serialize>(context: &'static str, value: &T) -> Result<(), CliError> {
+    let rendered = serde_json::to_string_pretty(value)
+        .map_err(|source| CliError::RenderJson { context, source })?;
+    println!("{rendered}");
+    Ok(())
+}
+
+fn print_validation_text(path: &Path, package_name: &str, outcome: &aqami_spec::ValidationOutcome) {
     if outcome.is_valid {
         println!(
             "AQAMI spec is valid.\npath: {}\npackage: {}",
@@ -189,7 +210,7 @@ fn print_validation_text(
     }
 }
 
-fn print_inspection_text(path: &std::path::Path, inspection: &ProjectInspection) {
+fn print_inspection_text(path: &Path, inspection: &ProjectInspection) {
     println!("AQAMI project inspection");
     println!("path: {}", path.display());
     println!("spec version: {}", inspection.spec_version);
@@ -253,10 +274,13 @@ fn comma_join<'a>(values: impl Iterator<Item = &'a str>) -> String {
     values.collect::<Vec<_>>().join(", ")
 }
 
-fn format_diagnostics(header: &str, diagnostics: &[Diagnostic]) -> String {
-    let mut output = header.to_string();
-    for diagnostic in diagnostics {
-        output.push_str("\n- ");
+fn format_diagnostics(diagnostics: &[Diagnostic]) -> String {
+    let mut output = String::new();
+    for (index, diagnostic) in diagnostics.iter().enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+        output.push_str("- ");
         output.push_str(&diagnostic.location);
         output.push_str(": ");
         output.push_str(&diagnostic.message);
