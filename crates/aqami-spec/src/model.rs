@@ -48,6 +48,7 @@ pub struct AccountSpec {
     pub name: String,
     pub docs: Option<String>,
     pub owner: Option<AccountOwner>,
+    pub space: Option<u64>,
     pub fields: Vec<FieldSpec>,
 }
 

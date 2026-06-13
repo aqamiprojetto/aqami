@@ -91,14 +91,17 @@ The repository now includes the first executable AQAMI layer:
 - `crates/aqami-spec`: loads AQAMI YAML or JSON specs, validates them against the bundled schema, and applies initial semantic validation
 - `crates/aqami-cli`: exposes `validate` and `inspect` commands on top of `aqami-spec`
 - `crates/aqami-codegen`: generates deterministic Rust skeletons from normalized AQAMI specs
+- `crates/aqami-runtime`: shared descriptor and validation primitives targeted by generated code
 
 The current spec layer now also carries:
 
 - explicit declared account ownership on account types
+- explicit account `space` metadata for program-owned state
 - explicit instruction-account type references
 - explicit instruction lifecycle constraints such as `init`, `payer`, and `rentExempt`
 
-This is intentionally the first code milestone because it gives future codegen, runtime, and MCP work a stable project model to build on.
+Generated Rust skeletons now depend on `aqami-runtime` instead of re-declaring their own local descriptor surface.
+That gives AQAMI its first shared runtime contract between spec normalization, code generation, and generated projects.
 
 ## Performance Position
 
@@ -139,9 +142,11 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - [`AGENTS.md`](./AGENTS.md): repository contract for AI coding agents
 - [`Cargo.toml`](./Cargo.toml): workspace root
 - `crates/aqami-spec`: spec loading, schema validation, and semantic validation
-- `crates/aqami-cli`: CLI entrypoint for validation and inspection
+- `crates/aqami-cli`: CLI entrypoint for validation, inspection, and generation
 - `crates/aqami-codegen`: deterministic Rust skeleton generation from normalized specs
+- `crates/aqami-runtime`: shared account and instruction descriptor types plus runtime validation helpers
 - [`docs/architecture.md`](./docs/architecture.md): planned system boundaries and workspace layout
+- [`docs/roadmap.md`](./docs/roadmap.md): long-term project arc from foundation to usable framework
 - [`docs/performance.md`](./docs/performance.md): performance values and optimization priorities
 - [`docs/specification.md`](./docs/specification.md): spec-first model, domain model, and authoring rules
 - [`docs/mcp-strategy.md`](./docs/mcp-strategy.md): when MCP helps and how it should fit the system
@@ -185,7 +190,7 @@ The framework should be something a serious team can trust, not a demo that happ
 
 ## Status
 
-As of June 12, 2026, this repository has its first executable foundation:
+As of June 13, 2026, this repository has its first executable foundation:
 
 - documentation and agent guidance
 - starter schema and example spec
@@ -193,6 +198,7 @@ As of June 12, 2026, this repository has its first executable foundation:
 - typed spec loading and validation
 - normalized spec modeling
 - deterministic Rust skeleton generation
+- a first shared runtime crate for account and instruction descriptors
 - CLI `validate`, `inspect`, and `generate` commands
 
-The next most valuable step is to deepen `aqami-spec` and add early code generation, not to jump straight into MCP or runtime complexity.
+The next most valuable step is to deepen Solana semantics further, then start moving generated code from skeleton shape toward more real runtime-aware execution boundaries.

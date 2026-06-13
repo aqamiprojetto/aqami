@@ -106,6 +106,10 @@
         "owner": {
           "$ref": "#/$defs/accountOwner"
         },
+        "space": {
+          "type": "integer",
+          "minimum": 1
+        },
         "fields": {
           "type": "array",
           "items": {

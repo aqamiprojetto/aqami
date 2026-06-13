@@ -14,6 +14,7 @@ struct AccountBinding {
     rust_module_name: String,
     rust_type_name: String,
     owner: NormalizedAccountOwner,
+    space: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -51,6 +52,7 @@ pub struct NormalizedAccount {
     pub name: String,
     pub docs: Option<String>,
     pub owner: NormalizedAccountOwner,
+    pub space: Option<u64>,
     pub rust_type_name: String,
     pub rust_module_name: String,
     pub fields: Vec<NormalizedField>,
@@ -83,6 +85,7 @@ pub struct NormalizedInstructionAccount {
     pub role: InstructionAccountRole,
     pub account_type: Option<String>,
     pub owner: Option<NormalizedAccountOwner>,
+    pub space: Option<u64>,
     pub constraints: Option<NormalizedInstructionAccountConstraints>,
     pub is_mut: bool,
     pub is_signer: bool,
@@ -230,6 +233,7 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                             owner: normalize_account_owner(account.owner.as_ref().expect(
                                 "normalization should only run after owner diagnostics pass",
                             )),
+                            space: account.space,
                         },
                     )
                 })
@@ -245,6 +249,12 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                 diagnostics.push(Diagnostic {
                     location: format!("{program_location}.accounts[{account_index}].owner"),
                     message: "declared account types must specify `owner`".to_string(),
+                });
+            }
+            if matches!(account.owner, Some(AccountOwner::Program)) && account.space.is_none() {
+                diagnostics.push(Diagnostic {
+                    location: format!("{program_location}.accounts[{account_index}].space"),
+                    message: "program-owned account types should declare `space`".to_string(),
                 });
             }
         }
@@ -342,6 +352,21 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                                         .to_string(),
                             });
                         }
+                        if let Some(account_type) = account.account_type.as_deref()
+                            && let Some(declared_account) = program
+                                .accounts
+                                .iter()
+                                .find(|candidate| candidate.name == account_type)
+                            && matches!(declared_account.owner, Some(AccountOwner::Program))
+                            && declared_account.space.is_none()
+                        {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.accountType"),
+                                message: format!(
+                                    "initialized program-owned account type `{account_type}` must declare `space`"
+                                ),
+                            });
+                        }
                     }
 
                     if let Some(payer) = constraints.payer.as_deref() {
@@ -427,6 +452,7 @@ fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
                             .as_ref()
                             .expect("normalization should only run after owner diagnostics pass"),
                     ),
+                    space: account.space,
                 },
             )
         })
@@ -446,6 +472,7 @@ fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
                             .as_ref()
                             .expect("normalization should only run after owner diagnostics pass"),
                     ),
+                    space: account.space,
                 },
             )
         })
@@ -489,6 +516,7 @@ fn build_normalized_account(account: &AccountSpec) -> NormalizedAccount {
                 .as_ref()
                 .expect("normalization should only run after owner diagnostics pass"),
         ),
+        space: account.space,
         rust_type_name: normalize_upper_camel_identifier(&account.name),
         rust_module_name: normalize_snake_identifier(&account.name),
         fields: account.fields.iter().map(build_normalized_field).collect(),
@@ -553,6 +581,7 @@ fn build_normalized_instruction_account(
         role: account.role.clone(),
         account_type: account.account_type.clone(),
         owner: binding.as_ref().map(|binding| binding.owner.clone()),
+        space: binding.as_ref().and_then(|binding| binding.space),
         constraints: account
             .constraints
             .as_ref()
@@ -754,6 +783,7 @@ mod tests {
             normalized.programs[0].accounts[0].owner,
             NormalizedAccountOwner::Program
         );
+        assert_eq!(normalized.programs[0].accounts[0].space, Some(128));
         assert_eq!(
             normalized.programs[0].instructions[0].accounts[2].rust_type_name,
             "Escrow"
@@ -763,6 +793,10 @@ mod tests {
                 .state_account_module_name
                 .as_deref(),
             Some("escrow")
+        );
+        assert_eq!(
+            normalized.programs[0].instructions[0].accounts[2].space,
+            Some(128)
         );
         assert!(
             normalized.programs[0].instructions[0].accounts[2]
@@ -815,6 +849,20 @@ mod tests {
             diagnostic
                 .message
                 .contains("initialized instruction accounts must declare `constraints.payer`")
+        }));
+    }
+
+    #[test]
+    fn program_owned_account_should_declare_space() {
+        let mut project = example_project();
+        project.programs[0].accounts[0].space = None;
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("program-owned account types should declare `space`")
         }));
     }
 }

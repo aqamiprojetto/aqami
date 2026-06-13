@@ -20,6 +20,11 @@ pub struct GeneratedProgram {
     pub files: Vec<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerateRustProgramOptions {
+    pub aqami_runtime_path: PathBuf,
+}
+
 #[derive(Debug, Error)]
 pub enum GenerateError {
     #[error("output directory already exists for generated program `{program_name}`: {path}")]
@@ -33,12 +38,18 @@ pub enum GenerateError {
 pub fn generate_rust_programs(
     project: &NormalizedProjectSpec,
     output_root: impl AsRef<Path>,
+    options: &GenerateRustProgramOptions,
 ) -> Result<Vec<GeneratedProgram>, GenerateError> {
     let output_root = output_root.as_ref();
     let mut generated_programs = Vec::with_capacity(project.programs.len());
 
     for program in &project.programs {
-        generated_programs.push(generate_rust_program(output_root, project, program)?);
+        generated_programs.push(generate_rust_program(
+            output_root,
+            project,
+            program,
+            options,
+        )?);
     }
 
     Ok(generated_programs)
@@ -48,6 +59,7 @@ fn generate_rust_program(
     output_root: &Path,
     project: &NormalizedProjectSpec,
     program: &NormalizedProgram,
+    options: &GenerateRustProgramOptions,
 ) -> Result<GeneratedProgram, GenerateError> {
     let program_dir = output_root.join(&program.rust_crate_name);
     if program_dir.exists() {
@@ -71,7 +83,7 @@ fn generate_rust_program(
     let mut files = Vec::new();
     write_file(
         &program_dir.join("Cargo.toml"),
-        &render_cargo_toml(project, program),
+        &render_cargo_toml(project, program, options),
         &mut files,
     )?;
     write_file(
@@ -84,7 +96,6 @@ fn generate_rust_program(
         &render_lib_rs(project, program),
         &mut files,
     )?;
-    write_file(&src_dir.join("types.rs"), &render_types_rs(), &mut files)?;
     write_file(
         &src_dir.join("errors.rs"),
         &render_errors_rs(&program.errors),
@@ -143,10 +154,16 @@ fn write_file(path: &Path, contents: &str, files: &mut Vec<PathBuf>) -> Result<(
     Ok(())
 }
 
-fn render_cargo_toml(project: &NormalizedProjectSpec, program: &NormalizedProgram) -> String {
+fn render_cargo_toml(
+    project: &NormalizedProjectSpec,
+    program: &NormalizedProgram,
+    options: &GenerateRustProgramOptions,
+) -> String {
     format!(
-        "[package]\nname = \"{}\"\nversion = \"{}\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"lib\"]\n",
-        program.rust_crate_name, project.package.version
+        "[package]\nname = \"{}\"\nversion = \"{}\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"lib\"]\n\n[dependencies]\naqami-runtime = {{ path = \"{}\" }}\n",
+        program.rust_crate_name,
+        project.package.version,
+        escape_toml_basic_string(&options.aqami_runtime_path.to_string_lossy()),
     )
 }
 
@@ -174,7 +191,6 @@ fn render_lib_rs(project: &NormalizedProjectSpec, program: &NormalizedProgram) -
     writeln!(&mut output, "pub mod instructions;").expect("string write should succeed");
     writeln!(&mut output, "pub mod pdas;").expect("string write should succeed");
     writeln!(&mut output, "pub mod state;").expect("string write should succeed");
-    writeln!(&mut output, "pub mod types;").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
@@ -188,71 +204,6 @@ fn render_lib_rs(project: &NormalizedProjectSpec, program: &NormalizedProgram) -
         program.name
     )
     .expect("string write should succeed");
-    output
-}
-
-fn render_types_rs() -> String {
-    let mut output = String::new();
-    writeln!(&mut output, "pub type Pubkey = [u8; 32];").expect("string write should succeed");
-    writeln!(&mut output).expect("string write should succeed");
-    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
-        .expect("string write should succeed");
-    writeln!(&mut output, "pub enum AccountOwner {{").expect("string write should succeed");
-    writeln!(&mut output, "    Program,").expect("string write should succeed");
-    writeln!(&mut output, "    SystemProgram,").expect("string write should succeed");
-    writeln!(&mut output, "    TokenProgram,").expect("string write should succeed");
-    writeln!(&mut output, "}}").expect("string write should succeed");
-    writeln!(&mut output).expect("string write should succeed");
-    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
-        .expect("string write should succeed");
-    writeln!(&mut output, "pub enum InstructionAccountRoleDescriptor {{")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    Account,").expect("string write should succeed");
-    writeln!(&mut output, "    Signer,").expect("string write should succeed");
-    writeln!(&mut output, "    SystemProgram,").expect("string write should succeed");
-    writeln!(&mut output, "    TokenProgram,").expect("string write should succeed");
-    writeln!(&mut output, "    Sysvar,").expect("string write should succeed");
-    writeln!(&mut output, "}}").expect("string write should succeed");
-    writeln!(&mut output).expect("string write should succeed");
-    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
-        .expect("string write should succeed");
-    writeln!(
-        &mut output,
-        "pub struct InstructionAccountConstraintDescriptor {{"
-    )
-    .expect("string write should succeed");
-    writeln!(&mut output, "    pub init: bool,").expect("string write should succeed");
-    writeln!(&mut output, "    pub payer: Option<&'static str>,")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    pub close_to: Option<&'static str>,")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    pub rent_exempt: bool,").expect("string write should succeed");
-    writeln!(&mut output, "}}").expect("string write should succeed");
-    writeln!(&mut output).expect("string write should succeed");
-    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
-        .expect("string write should succeed");
-    writeln!(&mut output, "pub struct InstructionAccountDescriptor {{")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    pub name: &'static str,").expect("string write should succeed");
-    writeln!(
-        &mut output,
-        "    pub role: InstructionAccountRoleDescriptor,"
-    )
-    .expect("string write should succeed");
-    writeln!(&mut output, "    pub account_type: Option<&'static str>,")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    pub owner: Option<AccountOwner>,")
-        .expect("string write should succeed");
-    writeln!(&mut output, "    pub is_mut: bool,").expect("string write should succeed");
-    writeln!(&mut output, "    pub is_signer: bool,").expect("string write should succeed");
-    writeln!(&mut output, "    pub pda: Option<&'static str>,")
-        .expect("string write should succeed");
-    writeln!(
-        &mut output,
-        "    pub constraints: Option<InstructionAccountConstraintDescriptor>,"
-    )
-    .expect("string write should succeed");
-    writeln!(&mut output, "}}").expect("string write should succeed");
     output
 }
 
@@ -287,7 +238,7 @@ fn render_events_rs(events: &[NormalizedEvent]) -> String {
         return output;
     }
 
-    writeln!(&mut output, "use crate::types::Pubkey;").expect("string write should succeed");
+    writeln!(&mut output, "use aqami_runtime::Pubkey;").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
 
     for event in events {
@@ -372,13 +323,18 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
 
 fn render_state_account_rs(account: &NormalizedAccount) -> String {
     let mut output = String::new();
-    writeln!(&mut output, "use crate::types::{{AccountOwner, Pubkey}};")
-        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "use aqami_runtime::{{AccountOwner, AccountTypeDescriptor, Pubkey}};"
+    )
+    .expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub const OWNER: AccountOwner = AccountOwner::{};",
-        account_owner_variant_name(&account.owner)
+        "pub const ACCOUNT_TYPE_DESCRIPTOR: AccountTypeDescriptor = AccountTypeDescriptor {{ name: \"{}\", owner: AccountOwner::{}, space: {} }};",
+        account.name,
+        account_owner_variant_name(&account.owner),
+        option_u64_literal(account.space),
     )
     .expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
@@ -403,29 +359,31 @@ fn render_state_account_rs(account: &NormalizedAccount) -> String {
 fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     let mut output = String::new();
     writeln!(&mut output, "use crate::errors::ProgramError;").expect("string write should succeed");
-    let mut type_imports = vec![
+    let mut runtime_imports = vec![
         "InstructionAccountDescriptor",
         "InstructionAccountRoleDescriptor",
         "Pubkey",
+        "RuntimeValidationError",
+        "validate_instruction_accounts",
     ];
     if instruction
         .accounts
         .iter()
         .any(|account| account.owner.is_some())
     {
-        type_imports.push("AccountOwner");
+        runtime_imports.push("AccountOwner");
     }
     if instruction
         .accounts
         .iter()
         .any(|account| account.constraints.is_some())
     {
-        type_imports.push("InstructionAccountConstraintDescriptor");
+        runtime_imports.push("InstructionAccountConstraintDescriptor");
     }
     writeln!(
         &mut output,
-        "use crate::types::{{{}}};",
-        type_imports.join(", ")
+        "use aqami_runtime::{{{}}};",
+        runtime_imports.join(", ")
     )
     .expect("string write should succeed");
 
@@ -452,11 +410,12 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     for account in &instruction.accounts {
         writeln!(
             &mut output,
-            "    InstructionAccountDescriptor {{ name: \"{}\", role: InstructionAccountRoleDescriptor::{}, account_type: {}, owner: {}, is_mut: {}, is_signer: {}, pda: {}, constraints: {} }},",
+            "    InstructionAccountDescriptor {{ name: \"{}\", role: InstructionAccountRoleDescriptor::{}, account_type: {}, owner: {}, space: {}, is_mut: {}, is_signer: {}, pda: {}, constraints: {} }},",
             account.name,
             instruction_account_role_variant_name(&account.role),
             option_str_literal(account.account_type.as_deref()),
             option_account_owner_literal(account),
+            option_u64_literal(account.space),
             account.is_mut,
             account.is_signer,
             option_str_literal(account.pda.as_deref()),
@@ -465,6 +424,18 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
         .expect("string write should succeed");
     }
     writeln!(&mut output, "];").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn validate_account_descriptors() -> Result<(), RuntimeValidationError> {{"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    validate_instruction_accounts(ACCOUNT_DESCRIPTORS)"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     push_doc_comment(&mut output, 0, instruction.docs.as_deref());
     writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
@@ -547,6 +518,9 @@ fn push_instruction_account_metadata_comment(
     if let Some(owner) = account.owner.as_ref() {
         parts.push(format!("owner={}", owner_literal_name(owner)));
     }
+    if let Some(space) = account.space {
+        parts.push(format!("space={space}"));
+    }
     if account.is_mut {
         parts.push("mut".to_string());
     }
@@ -628,6 +602,13 @@ fn option_account_owner_literal(account: &NormalizedInstructionAccount) -> Strin
     }
 }
 
+fn option_u64_literal(value: Option<u64>) -> String {
+    match value {
+        Some(value) => format!("Some({value})"),
+        None => "None".to_string(),
+    }
+}
+
 fn render_constraint_literal(account: &NormalizedInstructionAccount) -> String {
     match account.constraints.as_ref() {
         Some(constraints) => format!(
@@ -651,6 +632,10 @@ fn instruction_account_role_name(role: &aqami_spec::InstructionAccountRole) -> &
     }
 }
 
+fn escape_toml_basic_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::PathBuf};
@@ -667,12 +652,17 @@ mod tests {
         let loaded = load_project_spec(path).expect("example should load");
         let normalized = normalize_project_spec(&loaded.project).expect("example should normalize");
         let temp_dir = tempdir().expect("temp dir should be created");
+        let options = GenerateRustProgramOptions {
+            aqami_runtime_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aqami-runtime"),
+        };
 
-        let generated = generate_rust_programs(&normalized, temp_dir.path())
+        let generated = generate_rust_programs(&normalized, temp_dir.path(), &options)
             .expect("generation should succeed");
 
         assert_eq!(generated.len(), 1);
         let output_dir = &generated[0].output_dir;
+        let cargo_toml = fs::read_to_string(output_dir.join("Cargo.toml"))
+            .expect("generated Cargo.toml should exist");
         let lib_rs = fs::read_to_string(output_dir.join("src/lib.rs"))
             .expect("generated lib.rs should exist");
         let instruction_rs =
@@ -681,11 +671,16 @@ mod tests {
         let account_rs = fs::read_to_string(output_dir.join("src/state/escrow.rs"))
             .expect("generated account should exist");
 
+        assert!(cargo_toml.contains("aqami-runtime = { path = "));
         assert!(lib_rs.contains("pub mod instructions;"));
+        assert!(!lib_rs.contains("pub mod types;"));
         assert!(instruction_rs.contains("pub struct CreateEscrowAccounts"));
         assert!(instruction_rs.contains("pub const ACCOUNT_DESCRIPTORS"));
+        assert!(instruction_rs.contains("pub fn validate_account_descriptors()"));
         assert!(instruction_rs.contains("account_type=Escrow"));
-        assert!(account_rs.contains("pub const OWNER: AccountOwner = AccountOwner::Program;"));
+        assert!(instruction_rs.contains("space=128"));
+        assert!(account_rs.contains("pub const ACCOUNT_TYPE_DESCRIPTOR: AccountTypeDescriptor"));
+        assert!(account_rs.contains("space: Some(128)"));
         assert!(instruction_rs.contains("todo!(\"Implement create_escrow\")"));
     }
 }

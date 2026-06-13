@@ -2,6 +2,7 @@
 members = [
   "crates/aqami-cli",
   "crates/aqami-codegen",
+  "crates/aqami-runtime",
   "crates/aqami-spec"
 ]
 resolver = "2"

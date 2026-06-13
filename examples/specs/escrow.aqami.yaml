@@ -11,6 +11,7 @@ programs:
       - name: "Escrow"
         docs: "Holds escrow state for a depositor and beneficiary."
         owner: "program"
+        space: 128
         fields:
           - name: "depositor"
             type: "pubkey"

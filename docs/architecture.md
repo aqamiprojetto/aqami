@@ -55,6 +55,7 @@ Suggested responsibilities:
 - `aqami-runtime`
   - account traits and helpers
   - instruction and error primitives
+  - shared descriptor types consumed by generated code
   - serialization boundaries
   - Solana-specific validation helpers
   - reusable runtime utilities
@@ -250,6 +251,7 @@ Recommended approach:
 ### Phase 3
 
 - runtime primitives
+- generated code targets `aqami-runtime`
 - integration testing with `solana-program-test`
 
 ### Phase 4

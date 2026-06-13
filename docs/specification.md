@@ -133,6 +133,7 @@ Account definitions should aim to describe:
 - account name
 - semantic purpose
 - owner expectation
+- space requirement for program-owned state
 - field layout
 - ownership expectations
 - seed relationships when used as a PDA
@@ -146,6 +147,7 @@ Future tooling should be able to inspect an account definition and answer:
 - which instructions read or write it
 
 For declared program account types, the owner should be explicit in the spec instead of being implied by framework folklore.
+For declared program account types, `space` should also be explicit so generated code and validators do not have to guess allocation size.
 
 ## Instruction Modeling Rules
 
@@ -155,6 +157,7 @@ Instruction definitions should be explicit about:
 - account roles
 - declared account types when an instruction account maps to a program-owned state account
 - lifecycle constraints such as initialization, payer, close target, and rent-exempt expectations
+- space expectations inherited from declared account types
 - signer requirements
 - mutability
 - PDA expectations
@@ -166,6 +169,7 @@ The long-term goal is that an agent can generate or review an instruction implem
 
 When an instruction account represents a concrete program account type, the spec should declare that explicitly rather than relying on naming conventions alone.
 When an instruction account is initialized or closed in a specific instruction, that lifecycle behavior should be declared on the instruction account binding rather than hidden in generator templates.
+When an initialized instruction account targets a program-owned account type, the declared account type should carry explicit `space` so both generation and runtime validation remain deterministic.
 
 ## PDA Modeling Rules
 

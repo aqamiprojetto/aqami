@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use aqami_codegen::{GenerateError, generate_rust_programs};
+use aqami_codegen::{GenerateError, GenerateRustProgramOptions, generate_rust_programs};
 use aqami_spec::{
     Diagnostic, LoadedProjectSpec, ProjectInspection, SpecLoadError, load_project_spec,
     normalize_project_spec, validate_project_spec,
@@ -155,12 +155,16 @@ fn generate_command(
 
     match target {
         GenerateTarget::RustProgram => {
-            let generated = generate_rust_programs(&normalized, &output_dir).map_err(|source| {
-                CliError::GenerateRustProgram {
-                    path: output_dir.clone(),
-                    source,
-                }
-            })?;
+            let options = GenerateRustProgramOptions {
+                aqami_runtime_path: aqami_runtime_crate_path(),
+            };
+            let generated =
+                generate_rust_programs(&normalized, &output_dir, &options).map_err(|source| {
+                    CliError::GenerateRustProgram {
+                        path: output_dir.clone(),
+                        source,
+                    }
+                })?;
             println!("Generated Rust program skeletons:");
             for program in generated {
                 println!(
@@ -272,6 +276,10 @@ fn print_inspection_text(path: &Path, inspection: &ProjectInspection) {
 
 fn comma_join<'a>(values: impl Iterator<Item = &'a str>) -> String {
     values.collect::<Vec<_>>().join(", ")
+}
+
+fn aqami_runtime_crate_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aqami-runtime")
 }
 
 fn format_diagnostics(diagnostics: &[Diagnostic]) -> String {

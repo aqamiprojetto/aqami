@@ -1,3 +1,5 @@
 mod rust_program;
 
-pub use rust_program::{GenerateError, GeneratedProgram, generate_rust_programs};
+pub use rust_program::{
+    GenerateError, GenerateRustProgramOptions, GeneratedProgram, generate_rust_programs,
+};
