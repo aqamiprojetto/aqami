@@ -7,4 +7,7 @@ pub use descriptors::{
     InstructionAccountRoleDescriptor, PdaBumpDescriptor, PdaBumpKindDescriptor, PdaDescriptor,
     PdaSeedDescriptor, PdaSeedKindDescriptor, Pubkey,
 };
-pub use validate::{RuntimeValidationError, validate_instruction_accounts};
+pub use validate::{
+    RuntimeValidationError, validate_account_infos, validate_instruction_accounts,
+    validate_program_account_infos,
+};

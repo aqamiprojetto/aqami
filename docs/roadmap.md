@@ -69,6 +69,7 @@ Today AQAMI includes:
 - explicit program-owned account space semantics in the spec
 - explicit `hasOne` relationship semantics in the spec
 - explicit PDA bump semantics in the spec
+- a first `solana-program-test` integration harness around runtime account-meta and owner validation
 - explicit close-target semantics in the spec
 
 The main implementation crates are:
@@ -89,13 +90,13 @@ Right now, AQAMI can:
 - emit structured instruction-account descriptors into generated code
 - share those descriptors through the first `aqami-runtime` crate
 - validate generated instruction account descriptors against initial runtime rules
+- validate actual signer, writable, owner, and system-program account semantics in a Solana execution test harness
 
 ### What AQAMI Cannot Do Yet
 
 Right now, AQAMI does not yet provide:
 
 - generated execution wiring beyond descriptor-level validation
-- integration with `solana-program-test`
 - real CPI helpers
 - client SDK generation
 - compatibility layers with existing Solana frameworks
@@ -141,6 +142,7 @@ The implementation history has followed this sequence:
 7. explicit account ownership and instruction lifecycle semantics
 8. explicit program-owned account space metadata
 9. first shared `aqami-runtime` descriptor and validation crate
+10. first `solana-program-test` execution-proof harness
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.
@@ -185,8 +187,8 @@ to:
 After runtime-aware generation:
 
 - add golden generation fixtures
-- add integration coverage
-- add `solana-program-test` examples
+- expand integration coverage
+- add generated-program `solana-program-test` examples
 - validate generated examples end to end
 
 ### Phase 5: Client And MCP Surfaces
