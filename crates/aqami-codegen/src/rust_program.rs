@@ -6,9 +6,9 @@ use std::{
 };
 
 use aqami_spec::{
-    NormalizedAccount, NormalizedError, NormalizedEvent, NormalizedInstruction,
-    NormalizedInstructionAccount, NormalizedPda, NormalizedProgram, NormalizedProjectSpec,
-    SeedKind,
+    NormalizedAccount, NormalizedAccountOwner, NormalizedError, NormalizedEvent,
+    NormalizedInstruction, NormalizedInstructionAccount, NormalizedPda, NormalizedProgram,
+    NormalizedProjectSpec, SeedKind,
 };
 use heck::ToUpperCamelCase;
 use thiserror::Error;
@@ -192,7 +192,68 @@ fn render_lib_rs(project: &NormalizedProjectSpec, program: &NormalizedProgram) -
 }
 
 fn render_types_rs() -> String {
-    "pub type Pubkey = [u8; 32];\n".to_string()
+    let mut output = String::new();
+    writeln!(&mut output, "pub type Pubkey = [u8; 32];").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(&mut output, "pub enum AccountOwner {{").expect("string write should succeed");
+    writeln!(&mut output, "    Program,").expect("string write should succeed");
+    writeln!(&mut output, "    SystemProgram,").expect("string write should succeed");
+    writeln!(&mut output, "    TokenProgram,").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(&mut output, "pub enum InstructionAccountRoleDescriptor {{")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    Account,").expect("string write should succeed");
+    writeln!(&mut output, "    Signer,").expect("string write should succeed");
+    writeln!(&mut output, "    SystemProgram,").expect("string write should succeed");
+    writeln!(&mut output, "    TokenProgram,").expect("string write should succeed");
+    writeln!(&mut output, "    Sysvar,").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub struct InstructionAccountConstraintDescriptor {{"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    pub init: bool,").expect("string write should succeed");
+    writeln!(&mut output, "    pub payer: Option<&'static str>,")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    pub close_to: Option<&'static str>,")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    pub rent_exempt: bool,").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(&mut output, "pub struct InstructionAccountDescriptor {{")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    pub name: &'static str,").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    pub role: InstructionAccountRoleDescriptor,"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    pub account_type: Option<&'static str>,")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    pub owner: Option<AccountOwner>,")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    pub is_mut: bool,").expect("string write should succeed");
+    writeln!(&mut output, "    pub is_signer: bool,").expect("string write should succeed");
+    writeln!(&mut output, "    pub pda: Option<&'static str>,")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    pub constraints: Option<InstructionAccountConstraintDescriptor>,"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    output
 }
 
 fn render_errors_rs(errors: &[NormalizedError]) -> String {
@@ -311,7 +372,15 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
 
 fn render_state_account_rs(account: &NormalizedAccount) -> String {
     let mut output = String::new();
-    writeln!(&mut output, "use crate::types::Pubkey;").expect("string write should succeed");
+    writeln!(&mut output, "use crate::types::{{AccountOwner, Pubkey}};")
+        .expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub const OWNER: AccountOwner = AccountOwner::{};",
+        account_owner_variant_name(&account.owner)
+    )
+    .expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     push_doc_comment(&mut output, 0, account.docs.as_deref());
     writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
@@ -334,7 +403,31 @@ fn render_state_account_rs(account: &NormalizedAccount) -> String {
 fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     let mut output = String::new();
     writeln!(&mut output, "use crate::errors::ProgramError;").expect("string write should succeed");
-    writeln!(&mut output, "use crate::types::Pubkey;").expect("string write should succeed");
+    let mut type_imports = vec![
+        "InstructionAccountDescriptor",
+        "InstructionAccountRoleDescriptor",
+        "Pubkey",
+    ];
+    if instruction
+        .accounts
+        .iter()
+        .any(|account| account.owner.is_some())
+    {
+        type_imports.push("AccountOwner");
+    }
+    if instruction
+        .accounts
+        .iter()
+        .any(|account| account.constraints.is_some())
+    {
+        type_imports.push("InstructionAccountConstraintDescriptor");
+    }
+    writeln!(
+        &mut output,
+        "use crate::types::{{{}}};",
+        type_imports.join(", ")
+    )
+    .expect("string write should succeed");
 
     let account_imports = instruction
         .accounts
@@ -350,6 +443,28 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
         writeln!(&mut output, "use crate::{import};").expect("string write should succeed");
     }
 
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub const ACCOUNT_DESCRIPTORS: &[InstructionAccountDescriptor] = &["
+    )
+    .expect("string write should succeed");
+    for account in &instruction.accounts {
+        writeln!(
+            &mut output,
+            "    InstructionAccountDescriptor {{ name: \"{}\", role: InstructionAccountRoleDescriptor::{}, account_type: {}, owner: {}, is_mut: {}, is_signer: {}, pda: {}, constraints: {} }},",
+            account.name,
+            instruction_account_role_variant_name(&account.role),
+            option_str_literal(account.account_type.as_deref()),
+            option_account_owner_literal(account),
+            account.is_mut,
+            account.is_signer,
+            option_str_literal(account.pda.as_deref()),
+            render_constraint_literal(account),
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output, "];").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     push_doc_comment(&mut output, 0, instruction.docs.as_deref());
     writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
@@ -429,6 +544,9 @@ fn push_instruction_account_metadata_comment(
     if let Some(account_type) = account.account_type.as_deref() {
         parts.push(format!("account_type={account_type}"));
     }
+    if let Some(owner) = account.owner.as_ref() {
+        parts.push(format!("owner={}", owner_literal_name(owner)));
+    }
     if account.is_mut {
         parts.push("mut".to_string());
     }
@@ -437,6 +555,20 @@ fn push_instruction_account_metadata_comment(
     }
     if let Some(pda) = account.pda.as_deref() {
         parts.push(format!("pda={pda}"));
+    }
+    if let Some(constraints) = account.constraints.as_ref() {
+        if constraints.init {
+            parts.push("init".to_string());
+        }
+        if let Some(payer) = constraints.payer.as_deref() {
+            parts.push(format!("payer={payer}"));
+        }
+        if let Some(close_to) = constraints.close_to.as_deref() {
+            parts.push(format!("close_to={close_to}"));
+        }
+        if constraints.rent_exempt {
+            parts.push("rent_exempt".to_string());
+        }
     }
     writeln!(output, "{prefix}/// {}", parts.join(", ")).expect("string write should succeed");
 }
@@ -451,6 +583,61 @@ fn seed_kind_name(kind: &SeedKind) -> &'static str {
         SeedKind::Arg => "arg",
         SeedKind::AccountField => "account_field",
         SeedKind::AccountKey => "account_key",
+    }
+}
+
+fn account_owner_variant_name(owner: &NormalizedAccountOwner) -> &'static str {
+    match owner {
+        NormalizedAccountOwner::Program => "Program",
+        NormalizedAccountOwner::SystemProgram => "SystemProgram",
+        NormalizedAccountOwner::TokenProgram => "TokenProgram",
+    }
+}
+
+fn owner_literal_name(owner: &NormalizedAccountOwner) -> &'static str {
+    match owner {
+        NormalizedAccountOwner::Program => "program",
+        NormalizedAccountOwner::SystemProgram => "system_program",
+        NormalizedAccountOwner::TokenProgram => "token_program",
+    }
+}
+
+fn instruction_account_role_variant_name(
+    role: &aqami_spec::InstructionAccountRole,
+) -> &'static str {
+    match role {
+        aqami_spec::InstructionAccountRole::Account => "Account",
+        aqami_spec::InstructionAccountRole::Signer => "Signer",
+        aqami_spec::InstructionAccountRole::SystemProgram => "SystemProgram",
+        aqami_spec::InstructionAccountRole::TokenProgram => "TokenProgram",
+        aqami_spec::InstructionAccountRole::Sysvar => "Sysvar",
+    }
+}
+
+fn option_str_literal(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("Some(\"{value}\")"),
+        None => "None".to_string(),
+    }
+}
+
+fn option_account_owner_literal(account: &NormalizedInstructionAccount) -> String {
+    match account.owner.as_ref() {
+        Some(owner) => format!("Some(AccountOwner::{})", account_owner_variant_name(owner)),
+        None => "None".to_string(),
+    }
+}
+
+fn render_constraint_literal(account: &NormalizedInstructionAccount) -> String {
+    match account.constraints.as_ref() {
+        Some(constraints) => format!(
+            "Some(InstructionAccountConstraintDescriptor {{ init: {}, payer: {}, close_to: {}, rent_exempt: {} }})",
+            constraints.init,
+            option_str_literal(constraints.payer.as_deref()),
+            option_str_literal(constraints.close_to.as_deref()),
+            constraints.rent_exempt
+        ),
+        None => "None".to_string(),
     }
 }
 
@@ -491,9 +678,14 @@ mod tests {
         let instruction_rs =
             fs::read_to_string(output_dir.join("src/instructions/create_escrow.rs"))
                 .expect("generated instruction should exist");
+        let account_rs = fs::read_to_string(output_dir.join("src/state/escrow.rs"))
+            .expect("generated account should exist");
 
         assert!(lib_rs.contains("pub mod instructions;"));
         assert!(instruction_rs.contains("pub struct CreateEscrowAccounts"));
+        assert!(instruction_rs.contains("pub const ACCOUNT_DESCRIPTORS"));
+        assert!(instruction_rs.contains("account_type=Escrow"));
+        assert!(account_rs.contains("pub const OWNER: AccountOwner = AccountOwner::Program;"));
         assert!(instruction_rs.contains("todo!(\"Implement create_escrow\")"));
     }
 }

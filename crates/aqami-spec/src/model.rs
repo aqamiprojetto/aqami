@@ -47,6 +47,7 @@ pub struct ProgramSpec {
 pub struct AccountSpec {
     pub name: String,
     pub docs: Option<String>,
+    pub owner: Option<AccountOwner>,
     pub fields: Vec<FieldSpec>,
 }
 
@@ -78,6 +79,7 @@ pub struct InstructionAccountSpec {
     pub role: InstructionAccountRole,
     #[serde(rename = "accountType")]
     pub account_type: Option<String>,
+    pub constraints: Option<InstructionAccountConstraintsSpec>,
     #[serde(default)]
     pub is_mut: bool,
     #[serde(default)]
@@ -94,6 +96,25 @@ pub enum InstructionAccountRole {
     SystemProgram,
     TokenProgram,
     Sysvar,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountOwner {
+    Program,
+    SystemProgram,
+    TokenProgram,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InstructionAccountConstraintsSpec {
+    #[serde(default)]
+    pub init: bool,
+    pub payer: Option<String>,
+    pub close_to: Option<String>,
+    #[serde(default)]
+    pub rent_exempt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

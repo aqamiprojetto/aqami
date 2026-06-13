@@ -92,6 +92,12 @@ The repository now includes the first executable AQAMI layer:
 - `crates/aqami-cli`: exposes `validate` and `inspect` commands on top of `aqami-spec`
 - `crates/aqami-codegen`: generates deterministic Rust skeletons from normalized AQAMI specs
 
+The current spec layer now also carries:
+
+- explicit declared account ownership on account types
+- explicit instruction-account type references
+- explicit instruction lifecycle constraints such as `init`, `payer`, and `rentExempt`
+
 This is intentionally the first code milestone because it gives future codegen, runtime, and MCP work a stable project model to build on.
 
 ## Performance Position

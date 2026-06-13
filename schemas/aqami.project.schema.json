@@ -103,6 +103,9 @@
         "docs": {
           "type": "string"
         },
+        "owner": {
+          "$ref": "#/$defs/accountOwner"
+        },
         "fields": {
           "type": "array",
           "items": {
@@ -192,10 +195,37 @@
         "accountType": {
           "type": "string"
         },
+        "constraints": {
+          "$ref": "#/$defs/instructionAccountConstraints"
+        },
         "docs": {
           "type": "string"
         }
       }
+    },
+    "instructionAccountConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "init": {
+          "type": "boolean"
+        },
+        "payer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "closeTo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rentExempt": {
+          "type": "boolean"
+        }
+      }
+    },
+    "accountOwner": {
+      "type": "string",
+      "enum": ["program", "system_program", "token_program"]
     },
     "pda": {
       "type": "object",

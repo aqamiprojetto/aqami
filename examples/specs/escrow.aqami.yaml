@@ -10,6 +10,7 @@ programs:
     accounts:
       - name: "Escrow"
         docs: "Holds escrow state for a depositor and beneficiary."
+        owner: "program"
         fields:
           - name: "depositor"
             type: "pubkey"
@@ -43,6 +44,10 @@ programs:
             accountType: "Escrow"
             isMut: true
             pda: "escrow_pda"
+            constraints:
+              init: true
+              payer: "depositor"
+              rentExempt: true
           - name: "system_program"
             role: "system_program"
         args:

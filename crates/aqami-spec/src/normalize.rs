@@ -4,15 +4,16 @@ use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use serde::Serialize;
 
 use crate::{
-    AccountSpec, AqamiProjectSpec, Cluster, Diagnostic, EventSpec, FieldSpec, FrameworkErrorSpec,
-    InstructionAccountRole, InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec,
-    ProgramSpec, SeedSpec,
+    AccountOwner, AccountSpec, AqamiProjectSpec, Cluster, Diagnostic, EventSpec, FieldSpec,
+    FrameworkErrorSpec, InstructionAccountConstraintsSpec, InstructionAccountRole,
+    InstructionAccountSpec, InstructionSpec, PackageSpec, PdaSpec, ProgramSpec, SeedSpec,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AccountBinding {
     rust_module_name: String,
     rust_type_name: String,
+    owner: NormalizedAccountOwner,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -49,6 +50,7 @@ pub struct NormalizedProgram {
 pub struct NormalizedAccount {
     pub name: String,
     pub docs: Option<String>,
+    pub owner: NormalizedAccountOwner,
     pub rust_type_name: String,
     pub rust_module_name: String,
     pub fields: Vec<NormalizedField>,
@@ -80,6 +82,8 @@ pub struct NormalizedInstructionAccount {
     pub name: String,
     pub role: InstructionAccountRole,
     pub account_type: Option<String>,
+    pub owner: Option<NormalizedAccountOwner>,
+    pub constraints: Option<NormalizedInstructionAccountConstraints>,
     pub is_mut: bool,
     pub is_signer: bool,
     pub pda: Option<String>,
@@ -87,6 +91,21 @@ pub struct NormalizedInstructionAccount {
     pub rust_field_name: String,
     pub rust_type_name: String,
     pub state_account_module_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub enum NormalizedAccountOwner {
+    Program,
+    SystemProgram,
+    TokenProgram,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NormalizedInstructionAccountConstraints {
+    pub init: bool,
+    pub payer: Option<String>,
+    pub close_to: Option<String>,
+    pub rent_exempt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -198,19 +217,23 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
             }),
         );
 
-        let declared_account_names: HashMap<&str, AccountBinding> = program
-            .accounts
-            .iter()
-            .map(|account| {
-                (
-                    account.name.as_str(),
-                    AccountBinding {
-                        rust_module_name: normalize_snake_identifier(&account.name),
-                        rust_type_name: normalize_upper_camel_identifier(&account.name),
-                    },
-                )
-            })
-            .collect();
+        let declared_account_names: HashMap<&str, AccountBinding> =
+            program
+                .accounts
+                .iter()
+                .map(|account| {
+                    (
+                        account.name.as_str(),
+                        AccountBinding {
+                            rust_module_name: normalize_snake_identifier(&account.name),
+                            rust_type_name: normalize_upper_camel_identifier(&account.name),
+                            owner: normalize_account_owner(account.owner.as_ref().expect(
+                                "normalization should only run after owner diagnostics pass",
+                            )),
+                        },
+                    )
+                })
+                .collect();
 
         for (account_index, account) in program.accounts.iter().enumerate() {
             validate_field_collection(
@@ -218,6 +241,12 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                 &account.fields,
                 &format!("{program_location}.accounts[{account_index}].fields"),
             );
+            if account.owner.is_none() {
+                diagnostics.push(Diagnostic {
+                    location: format!("{program_location}.accounts[{account_index}].owner"),
+                    message: "declared account types must specify `owner`".to_string(),
+                });
+            }
         }
 
         for (event_index, event) in program.events.iter().enumerate() {
@@ -277,6 +306,79 @@ pub fn normalization_diagnostics(project: &AqamiProjectSpec) -> Vec<Diagnostic> 
                             .to_string(),
                     });
                 }
+
+                if let Some(constraints) = account.constraints.as_ref() {
+                    if account.role != InstructionAccountRole::Account {
+                        diagnostics.push(Diagnostic {
+                            location: format!("{account_location}.constraints"),
+                            message:
+                                "instruction account constraints are only valid for role `account`"
+                                    .to_string(),
+                        });
+                    }
+
+                    if constraints.init {
+                        if !account.is_mut {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.isMut"),
+                                message:
+                                    "initialized instruction accounts must set `isMut` to true"
+                                        .to_string(),
+                            });
+                        }
+                        if account.account_type.is_none() {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.accountType"),
+                                message:
+                                    "initialized instruction accounts must declare `accountType`"
+                                        .to_string(),
+                            });
+                        }
+                        if constraints.payer.is_none() {
+                            diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.constraints.payer"),
+                                message:
+                                    "initialized instruction accounts must declare `constraints.payer`"
+                                        .to_string(),
+                            });
+                        }
+                    }
+
+                    if let Some(payer) = constraints.payer.as_deref() {
+                        match instruction.accounts.iter().find(|candidate| candidate.name == payer) {
+                            Some(payer_account) => {
+                                if !payer_account.is_signer {
+                                    diagnostics.push(Diagnostic {
+                                        location: format!("{account_location}.constraints.payer"),
+                                        message: format!(
+                                            "payer account `{payer}` must set `isSigner` to true"
+                                        ),
+                                    });
+                                }
+                            }
+                            None => diagnostics.push(Diagnostic {
+                                location: format!("{account_location}.constraints.payer"),
+                                message: format!(
+                                    "constraints.payer references unknown instruction account `{payer}`"
+                                ),
+                            }),
+                        }
+                    }
+
+                    if let Some(close_to) = constraints.close_to.as_deref()
+                        && !instruction
+                            .accounts
+                            .iter()
+                            .any(|candidate| candidate.name == close_to)
+                    {
+                        diagnostics.push(Diagnostic {
+                            location: format!("{account_location}.constraints.closeTo"),
+                            message: format!(
+                                "constraints.closeTo references unknown instruction account `{close_to}`"
+                            ),
+                        });
+                    }
+                }
             }
         }
     }
@@ -319,6 +421,12 @@ fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
                 AccountBinding {
                     rust_module_name: normalize_snake_identifier(&account.name),
                     rust_type_name: normalize_upper_camel_identifier(&account.name),
+                    owner: normalize_account_owner(
+                        account
+                            .owner
+                            .as_ref()
+                            .expect("normalization should only run after owner diagnostics pass"),
+                    ),
                 },
             )
         })
@@ -332,6 +440,12 @@ fn build_normalized_program(program: &ProgramSpec) -> NormalizedProgram {
                 AccountBinding {
                     rust_module_name: normalize_snake_identifier(&account.name),
                     rust_type_name: normalize_upper_camel_identifier(&account.name),
+                    owner: normalize_account_owner(
+                        account
+                            .owner
+                            .as_ref()
+                            .expect("normalization should only run after owner diagnostics pass"),
+                    ),
                 },
             )
         })
@@ -369,6 +483,12 @@ fn build_normalized_account(account: &AccountSpec) -> NormalizedAccount {
     NormalizedAccount {
         name: account.name.clone(),
         docs: account.docs.clone(),
+        owner: normalize_account_owner(
+            account
+                .owner
+                .as_ref()
+                .expect("normalization should only run after owner diagnostics pass"),
+        ),
         rust_type_name: normalize_upper_camel_identifier(&account.name),
         rust_module_name: normalize_snake_identifier(&account.name),
         fields: account.fields.iter().map(build_normalized_field).collect(),
@@ -432,6 +552,11 @@ fn build_normalized_instruction_account(
         name: account.name.clone(),
         role: account.role.clone(),
         account_type: account.account_type.clone(),
+        owner: binding.as_ref().map(|binding| binding.owner.clone()),
+        constraints: account
+            .constraints
+            .as_ref()
+            .map(build_normalized_instruction_account_constraints),
         is_mut: account.is_mut,
         is_signer: account.is_signer,
         pda: account.pda.clone(),
@@ -442,6 +567,17 @@ fn build_normalized_instruction_account(
             .map(|binding| binding.rust_type_name.clone())
             .unwrap_or_else(|| "Pubkey".to_string()),
         state_account_module_name: binding.map(|binding| binding.rust_module_name),
+    }
+}
+
+fn build_normalized_instruction_account_constraints(
+    constraints: &InstructionAccountConstraintsSpec,
+) -> NormalizedInstructionAccountConstraints {
+    NormalizedInstructionAccountConstraints {
+        init: constraints.init,
+        payer: constraints.payer.clone(),
+        close_to: constraints.close_to.clone(),
+        rent_exempt: constraints.rent_exempt,
     }
 }
 
@@ -469,6 +605,14 @@ fn build_normalized_error(error: &FrameworkErrorSpec) -> NormalizedError {
         code: error.code,
         message: error.message.clone(),
         rust_variant_name: normalize_upper_camel_identifier(&error.name),
+    }
+}
+
+fn normalize_account_owner(owner: &AccountOwner) -> NormalizedAccountOwner {
+    match owner {
+        AccountOwner::Program => NormalizedAccountOwner::Program,
+        AccountOwner::SystemProgram => NormalizedAccountOwner::SystemProgram,
+        AccountOwner::TokenProgram => NormalizedAccountOwner::TokenProgram,
     }
 }
 
@@ -607,6 +751,10 @@ mod tests {
         assert_eq!(normalized.programs[0].rust_crate_name, "escrow");
         assert_eq!(normalized.programs[0].accounts[0].rust_type_name, "Escrow");
         assert_eq!(
+            normalized.programs[0].accounts[0].owner,
+            NormalizedAccountOwner::Program
+        );
+        assert_eq!(
             normalized.programs[0].instructions[0].accounts[2].rust_type_name,
             "Escrow"
         );
@@ -615,6 +763,12 @@ mod tests {
                 .state_account_module_name
                 .as_deref(),
             Some("escrow")
+        );
+        assert!(
+            normalized.programs[0].instructions[0].accounts[2]
+                .constraints
+                .as_ref()
+                .is_some_and(|constraints| constraints.init && constraints.rent_exempt)
         );
     }
 
@@ -643,6 +797,24 @@ mod tests {
             diagnostic
                 .message
                 .contains("PDA-backed instruction accounts must declare `accountType`")
+        }));
+    }
+
+    #[test]
+    fn initialized_instruction_account_requires_payer() {
+        let mut project = example_project();
+        let constraints = project.programs[0].instructions[0].accounts[2]
+            .constraints
+            .as_mut()
+            .expect("example should have constraints");
+        constraints.payer = None;
+
+        let diagnostics = normalization_diagnostics(&project);
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("initialized instruction accounts must declare `constraints.payer`")
         }));
     }
 }
