@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache Cargo and target artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run workspace tests
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Validate reference spec
+        run: cargo run --locked -p aqami-cli -- validate examples/specs/escrow.aqami.yaml
+
+      - name: Inspect normalized reference spec
+        run: cargo run --locked -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml --format json > /tmp/aqami-inspect.json
+
+      - name: Generate and compile reference program
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          cargo run --locked -p aqami-cli -- generate rust-program --spec examples/specs/escrow.aqami.yaml --output-dir "$tmpdir"
+          cargo check --manifest-path "$tmpdir/escrow/Cargo.toml"

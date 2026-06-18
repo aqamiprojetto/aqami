@@ -169,6 +169,27 @@ If those layers disagree, the mismatch should be resolved immediately instead of
 - run `cargo run -p aqami-cli -- inspect examples/specs/escrow.aqami.yaml --format json`
 - run `cargo run -p aqami-cli -- generate rust-program --spec examples/specs/escrow.aqami.yaml --output-dir /tmp/aqami-out`
 
+## CI And Release Builds
+
+GitHub Actions CI now validates the repository through the same explicit surfaces AQAMI expects future users and agents to trust:
+
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --all-targets`
+- `aqami-cli validate` and `inspect` against the reference escrow spec
+- spec-to-code round-tripping by generating the reference Rust program and compiling it
+
+Release builds are tuned for maximum host-side optimization at the workspace level:
+
+- `opt-level = 3`
+- `lto = "fat"`
+- `codegen-units = 1`
+- `panic = "abort"`
+- `strip = "symbols"`
+
+That profile is intentionally optimized for shipped release artifacts rather than fast local iteration.
+CI keeps its main verification path on the default test and dev profiles so day-to-day feedback stays quick.
+
 ## Development Priorities
 
 Recommended build order:

@@ -66,3 +66,9 @@ At the current repository stage, the practical performance guidance is:
 - keep normalized spec data explicit and reusable
 - generate deterministic outputs so agents and humans do not waste work on unstable diffs
 - delay runtime-specific micro-optimization until runtime crates and generated Solana code exist
+
+The current repository policy now reflects that split:
+
+- CI should use dependency and target caching aggressively, but keep regular verification on debug and test profiles for faster feedback
+- shipped host-side release artifacts should use a maximally optimized Cargo release profile with `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, and stripped symbols
+- future Solana SBF or other target-specific release pipelines should be tuned explicitly instead of assuming host release settings are automatically sufficient

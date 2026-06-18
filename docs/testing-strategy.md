@@ -110,3 +110,15 @@ It is done when:
 - docs and examples are aligned
 - the relevant test layer is updated
 - the behavior is difficult for future agents to accidentally break
+
+## CI Baseline
+
+AQAMI CI should exercise the same explicit framework surfaces the architecture expects humans and agents to rely on:
+
+- formatting and linting for workspace consistency
+- workspace tests across unit and integration targets
+- CLI validation of the reference spec fixture
+- CLI inspection of the normalized model
+- end-to-end generation of the reference Rust program followed by a compile check
+
+That baseline keeps the spec model, CLI, generator, and runtime contract connected in one repeatable verification path instead of testing each layer in isolation only.
