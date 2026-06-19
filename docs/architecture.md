@@ -5,7 +5,7 @@
 AQAMI should become a framework that is easy to understand and extend by both humans and AI agents.
 That requires architecture that is explicit not only in code, but also in the artifacts around the code.
 
-This document defines the intended system boundaries before implementation begins.
+This document defines the intended system boundaries and explains how the current implementation fits into that target shape.
 
 ## Architectural Thesis
 
@@ -26,9 +26,10 @@ In other words:
 5. CLI commands expose those capabilities for humans and automation
 6. MCP wraps stable CLI and spec capabilities for agent-native workflows
 
-## Proposed Workspace Layout
+## Workspace Layout
 
-The repository will likely evolve into a Cargo workspace similar to:
+The repository already uses a Cargo workspace with the core foundation crates in place.
+The target long-term shape remains:
 
 ```text
 aqami/
@@ -43,7 +44,7 @@ aqami/
   schemas/
 ```
 
-Suggested responsibilities:
+Current and intended responsibilities:
 
 - `aqami-spec`
   - typed spec model
@@ -106,6 +107,19 @@ Important implication:
 - `aqami-mcp` should depend on stable spec and CLI capabilities
 - `aqami-runtime` should not depend on the MCP or CLI layer
 - codegen should consume normalized spec models instead of parsing ad hoc
+
+## Current Implementation Status
+
+Today the architecture is partially implemented:
+
+- `aqami-spec` exists and handles typed loading, schema validation, semantic validation, and normalization
+- `aqami-codegen` exists and generates deterministic Rust program skeletons
+- `aqami-runtime` exists and provides shared descriptors plus runtime validation helpers
+- `aqami-cli` exists and exposes `validate`, `inspect`, and `generate`
+- `aqami-mcp` is still intentionally deferred until the spec, runtime, and CLI surfaces stabilize further
+
+That means AQAMI is no longer only an architecture sketch.
+It is an implemented foundation with a still-incomplete framework surface.
 
 ## Core Flows
 
@@ -240,24 +254,25 @@ Recommended approach:
 - coupling runtime behavior too tightly to scaffolding details
 - hiding Solana invariants behind convenience macros without strong visibility
 
-## Initial Milestones
+## Milestones So Far
 
-### Phase 0
+The architecture has already crossed these checkpoints:
 
-- repository docs
-- schemas
-- example specs
-- task-spec workflow
+- repository docs, schemas, example specs, and task-spec workflow
+- `aqami-spec` with parser, schema validation, semantic validation, and normalization
+- CLI `validate`, `inspect`, and `generate`
+- deterministic Rust program skeleton generation
+- first shared `aqami-runtime` descriptor and validation surface
+- generated instruction-level runtime validation entrypoints
 
-### Phase 1
+## Next Architectural Milestones
 
-- `aqami-spec`
-- parser and validator
-- CLI `validate` and `inspect`
+The next architecture-bearing steps are:
 
-### Phase 2
-
-- minimal Rust program generation
+- deepen generated execution boundaries beyond validation-only stubs
+- expand runtime helpers without introducing hidden serialization or decoding conventions
+- broaden end-to-end generated-program testing
+- add client and MCP surfaces only on top of those stabilized foundations
 - snapshot tests
 - generated example projects
 

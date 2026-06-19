@@ -270,12 +270,16 @@ If the spec is successful, AQAMI should be able to support:
 - safer MCP tools
 - documentation generation
 
-## Initial Deliverables In This Repository
+## Current Deliverables In This Repository
 
-This repository starts with:
+This repository now includes:
 
 - [`schemas/aqami.project.schema.json`](../schemas/aqami.project.schema.json)
 - [`examples/specs/escrow.aqami.yaml`](../examples/specs/escrow.aqami.yaml)
+- typed spec loading, validation, and normalization in `aqami-spec`
+- CLI validation, inspection, and generation in `aqami-cli`
+- deterministic Rust skeleton generation in `aqami-codegen`
+- shared runtime descriptors and validation helpers in `aqami-runtime`
 
-These are early foundation artifacts, not final design commitments.
+These remain early framework foundations rather than the final AQAMI surface, but they are real executable contracts rather than placeholder documents alone.
 They exist to force clarity early.
