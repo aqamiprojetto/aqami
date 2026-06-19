@@ -1,10 +1,12 @@
-use solana_program::{account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
+use solana_program::{
+    account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey as SolanaPubkey,
+};
 use solana_system_interface::program as system_program;
 use thiserror::Error;
 
 use crate::{
-    AccountOwner, InstructionAccountDescriptor, InstructionAccountRoleDescriptor,
-    PdaBumpKindDescriptor, PdaDescriptor, PdaSeedKindDescriptor,
+    AccountOwner, InstructionAccountDescriptor, InstructionAccountRoleDescriptor, InstructionArg,
+    InstructionArgValue, PdaBumpKindDescriptor, PdaDescriptor, PdaSeedKindDescriptor,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -20,13 +22,13 @@ pub enum RuntimeValidationError {
     )]
     AccountOwnerMismatch {
         account: &'static str,
-        expected_owner: Pubkey,
-        actual_owner: Pubkey,
+        expected_owner: SolanaPubkey,
+        actual_owner: SolanaPubkey,
     },
     #[error("runtime account `{account}` must be the system program, got `{actual_key}`")]
     IncorrectSystemProgramAccount {
         account: &'static str,
-        actual_key: Pubkey,
+        actual_key: SolanaPubkey,
     },
     #[error(
         "runtime account `{account}` uses token-program ownership semantics that AQAMI does not yet validate explicitly"
@@ -43,16 +45,37 @@ pub enum RuntimeValidationError {
         pda: &'static str,
         seed_account: &'static str,
     },
+    #[error("PDA `{pda}` for account `{account}` references unknown instruction argument `{arg}`")]
+    UnknownPdaSeedArg {
+        account: &'static str,
+        pda: &'static str,
+        arg: &'static str,
+    },
     #[error("PDA `{pda}` for account `{account}` uses unsupported seed kind `{kind}`")]
     UnsupportedPdaSeedKind {
         account: &'static str,
         pda: &'static str,
         kind: &'static str,
     },
+    #[error("PDA `{pda}` for account `{account}` references unknown bump argument `{arg}`")]
+    UnknownPdaBumpArg {
+        account: &'static str,
+        pda: &'static str,
+        arg: &'static str,
+    },
     #[error("PDA `{pda}` for account `{account}` uses unsupported bump kind `{kind}`")]
     UnsupportedPdaBumpKind {
         account: &'static str,
         pda: &'static str,
+        kind: &'static str,
+    },
+    #[error(
+        "PDA `{pda}` for account `{account}` uses bump argument `{arg}` with unsupported AQAMI type `{kind}`"
+    )]
+    InvalidPdaBumpArgType {
+        account: &'static str,
+        pda: &'static str,
+        arg: &'static str,
         kind: &'static str,
     },
     #[error("PDA `{pda}` for account `{account}` could not be derived for this program")]
@@ -66,8 +89,8 @@ pub enum RuntimeValidationError {
     PdaMismatch {
         account: &'static str,
         pda: &'static str,
-        expected_key: Pubkey,
-        actual_key: Pubkey,
+        expected_key: SolanaPubkey,
+        actual_key: SolanaPubkey,
     },
     #[error("initialized account `{account}` must be mutable")]
     InitWithoutMutability { account: &'static str },
@@ -252,7 +275,7 @@ pub fn validate_account_infos(
 /// validation today because the current spec model does not yet distinguish
 /// classic SPL Token from Token-2022 ownership semantics.
 pub fn validate_program_account_infos(
-    program_id: &Pubkey,
+    program_id: &SolanaPubkey,
     expected: &[InstructionAccountDescriptor],
     actual: &[AccountInfo<'_>],
 ) -> Result<(), RuntimeValidationError> {
@@ -310,10 +333,53 @@ pub fn validate_program_account_infos(
 /// as `arg` seeds, `account_field` seeds, and arg-backed bumps until the runtime
 /// exposes the additional execution context required to validate them safely.
 pub fn validate_program_account_infos_with_pdas(
-    program_id: &Pubkey,
+    program_id: &SolanaPubkey,
     expected: &[InstructionAccountDescriptor],
     actual: &[AccountInfo<'_>],
     pda_descriptors: &[PdaDescriptor],
+) -> Result<(), RuntimeValidationError> {
+    validate_program_account_infos_with_optional_args(
+        program_id,
+        expected,
+        actual,
+        pda_descriptors,
+        None,
+    )
+}
+
+/// Validates program-context account metadata plus PDA semantics that depend on
+/// explicit AQAMI instruction arguments.
+///
+/// This extends `validate_program_account_infos_with_pdas` with typed runtime
+/// argument resolution for:
+///
+/// - `arg` seeds
+/// - `arg` bumps
+///
+/// AQAMI intentionally keeps `account_field` seeds unsupported here until the
+/// runtime has an explicit account-data layout and decoding surface.
+pub fn validate_program_account_infos_with_pdas_and_args(
+    program_id: &SolanaPubkey,
+    expected: &[InstructionAccountDescriptor],
+    actual: &[AccountInfo<'_>],
+    pda_descriptors: &[PdaDescriptor],
+    instruction_args: &[InstructionArg<'_>],
+) -> Result<(), RuntimeValidationError> {
+    validate_program_account_infos_with_optional_args(
+        program_id,
+        expected,
+        actual,
+        pda_descriptors,
+        Some(instruction_args),
+    )
+}
+
+fn validate_program_account_infos_with_optional_args(
+    program_id: &SolanaPubkey,
+    expected: &[InstructionAccountDescriptor],
+    actual: &[AccountInfo<'_>],
+    pda_descriptors: &[PdaDescriptor],
+    instruction_args: Option<&[InstructionArg<'_>]>,
 ) -> Result<(), RuntimeValidationError> {
     validate_program_account_infos(program_id, expected, actual)?;
 
@@ -332,10 +398,12 @@ pub fn validate_program_account_infos_with_pdas(
             });
         };
 
-        let mut seed_slices = Vec::with_capacity(pda_descriptor.seeds.len());
+        let mut resolved_seeds = Vec::with_capacity(pda_descriptor.seeds.len());
         for seed in pda_descriptor.seeds {
             match seed.kind {
-                PdaSeedKindDescriptor::Const => seed_slices.push(seed.value.as_bytes()),
+                PdaSeedKindDescriptor::Const => {
+                    resolved_seeds.push(ResolvedSeed::Borrowed(seed.value.as_bytes()))
+                }
                 PdaSeedKindDescriptor::AccountKey => {
                     let Some(seed_account_index) = instruction_account_index(expected, seed.value)
                     else {
@@ -345,14 +413,26 @@ pub fn validate_program_account_infos_with_pdas(
                             seed_account: seed.value,
                         });
                     };
-                    seed_slices.push(actual[seed_account_index].key.as_ref());
+                    resolved_seeds.push(ResolvedSeed::Borrowed(
+                        actual[seed_account_index].key.as_ref(),
+                    ));
                 }
                 PdaSeedKindDescriptor::Arg => {
-                    return Err(RuntimeValidationError::UnsupportedPdaSeedKind {
-                        account: descriptor.name,
-                        pda: pda_name,
-                        kind: pda_seed_kind_name(seed.kind),
-                    });
+                    let Some(instruction_args) = instruction_args else {
+                        return Err(RuntimeValidationError::UnsupportedPdaSeedKind {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            kind: pda_seed_kind_name(seed.kind),
+                        });
+                    };
+                    let Some(seed_arg) = instruction_arg_value(instruction_args, seed.value) else {
+                        return Err(RuntimeValidationError::UnknownPdaSeedArg {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            arg: seed.value,
+                        });
+                    };
+                    resolved_seeds.push(ResolvedSeed::Owned(instruction_arg_seed_bytes(seed_arg)));
                 }
                 PdaSeedKindDescriptor::AccountField => {
                     return Err(RuntimeValidationError::UnsupportedPdaSeedKind {
@@ -363,24 +443,59 @@ pub fn validate_program_account_infos_with_pdas(
                 }
             }
         }
+        let seed_slices = resolved_seeds
+            .iter()
+            .map(|seed| match seed {
+                ResolvedSeed::Borrowed(value) => *value,
+                ResolvedSeed::Owned(value) => value.as_slice(),
+            })
+            .collect::<Vec<_>>();
 
         let expected_key = match pda_descriptor.bump {
-            None => Pubkey::create_program_address(&seed_slices, program_id).map_err(|_| {
-                RuntimeValidationError::PdaDerivationFailed {
-                    account: descriptor.name,
-                    pda: pda_name,
-                }
-            })?,
-            Some(bump) => match bump.kind {
-                PdaBumpKindDescriptor::Canonical => {
-                    Pubkey::find_program_address(&seed_slices, program_id).0
-                }
-                PdaBumpKindDescriptor::Arg => {
-                    return Err(RuntimeValidationError::UnsupportedPdaBumpKind {
+            None => {
+                SolanaPubkey::create_program_address(&seed_slices, program_id).map_err(|_| {
+                    RuntimeValidationError::PdaDerivationFailed {
                         account: descriptor.name,
                         pda: pda_name,
-                        kind: pda_bump_kind_name(bump.kind),
-                    });
+                    }
+                })?
+            }
+            Some(bump) => match bump.kind {
+                PdaBumpKindDescriptor::Canonical => {
+                    SolanaPubkey::find_program_address(&seed_slices, program_id).0
+                }
+                PdaBumpKindDescriptor::Arg => {
+                    let Some(instruction_args) = instruction_args else {
+                        return Err(RuntimeValidationError::UnsupportedPdaBumpKind {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            kind: pda_bump_kind_name(bump.kind),
+                        });
+                    };
+                    let arg_name = bump.value.expect("arg-backed bumps must declare a value");
+                    let Some(bump_arg) = instruction_arg_value(instruction_args, arg_name) else {
+                        return Err(RuntimeValidationError::UnknownPdaBumpArg {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            arg: arg_name,
+                        });
+                    };
+                    let Some(bump_value) = instruction_arg_bump_value(bump_arg) else {
+                        return Err(RuntimeValidationError::InvalidPdaBumpArgType {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            arg: arg_name,
+                            kind: instruction_arg_value_kind_name(bump_arg),
+                        });
+                    };
+                    let bump_seed = [bump_value];
+                    let mut seed_slices_with_bump = seed_slices.clone();
+                    seed_slices_with_bump.push(&bump_seed);
+                    SolanaPubkey::create_program_address(&seed_slices_with_bump, program_id)
+                        .map_err(|_| RuntimeValidationError::PdaDerivationFailed {
+                            account: descriptor.name,
+                            pda: pda_name,
+                        })?
                 }
             },
         };
@@ -398,6 +513,21 @@ pub fn validate_program_account_infos_with_pdas(
     Ok(())
 }
 
+enum ResolvedSeed<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+fn instruction_arg_value<'a>(
+    instruction_args: &'a [InstructionArg<'a>],
+    arg_name: &str,
+) -> Option<&'a InstructionArgValue<'a>> {
+    instruction_args
+        .iter()
+        .find(|arg| arg.name == arg_name)
+        .map(|arg| &arg.value)
+}
+
 fn instruction_account_index(
     expected: &[InstructionAccountDescriptor],
     account_name: &str,
@@ -405,6 +535,51 @@ fn instruction_account_index(
     expected
         .iter()
         .position(|candidate| candidate.name == account_name)
+}
+
+fn instruction_arg_seed_bytes(value: &InstructionArgValue<'_>) -> Vec<u8> {
+    match value {
+        InstructionArgValue::Bool(value) => vec![u8::from(*value)],
+        InstructionArgValue::U8(value) => vec![*value],
+        InstructionArgValue::U16(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::U32(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::U64(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::U128(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::I8(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::I16(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::I32(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::I64(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::I128(value) => value.to_le_bytes().to_vec(),
+        InstructionArgValue::String(value) => value.as_bytes().to_vec(),
+        InstructionArgValue::Bytes(value) => value.to_vec(),
+        InstructionArgValue::Pubkey(value) => value.to_vec(),
+    }
+}
+
+fn instruction_arg_bump_value(value: &InstructionArgValue<'_>) -> Option<u8> {
+    match value {
+        InstructionArgValue::U8(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn instruction_arg_value_kind_name(value: &InstructionArgValue<'_>) -> &'static str {
+    match value {
+        InstructionArgValue::Bool(_) => "bool",
+        InstructionArgValue::U8(_) => "u8",
+        InstructionArgValue::U16(_) => "u16",
+        InstructionArgValue::U32(_) => "u32",
+        InstructionArgValue::U64(_) => "u64",
+        InstructionArgValue::U128(_) => "u128",
+        InstructionArgValue::I8(_) => "i8",
+        InstructionArgValue::I16(_) => "i16",
+        InstructionArgValue::I32(_) => "i32",
+        InstructionArgValue::I64(_) => "i64",
+        InstructionArgValue::I128(_) => "i128",
+        InstructionArgValue::String(_) => "string",
+        InstructionArgValue::Bytes(_) => "bytes",
+        InstructionArgValue::Pubkey(_) => "pubkey",
+    }
 }
 
 fn pda_seed_kind_name(kind: PdaSeedKindDescriptor) -> &'static str {
@@ -441,10 +616,11 @@ impl From<RuntimeValidationError> for ProgramError {
             RuntimeValidationError::UnsupportedTokenProgramOwnerValidation { .. }
             | RuntimeValidationError::UnknownPdaDescriptor { .. }
             | RuntimeValidationError::UnknownPdaSeedAccount { .. }
+            | RuntimeValidationError::UnknownPdaSeedArg { .. }
             | RuntimeValidationError::UnsupportedPdaSeedKind { .. }
-            | RuntimeValidationError::UnsupportedPdaBumpKind { .. } => {
-                ProgramError::InvalidArgument
-            }
+            | RuntimeValidationError::UnknownPdaBumpArg { .. }
+            | RuntimeValidationError::UnsupportedPdaBumpKind { .. }
+            | RuntimeValidationError::InvalidPdaBumpArgType { .. } => ProgramError::InvalidArgument,
             RuntimeValidationError::AccountNotMutable { .. }
             | RuntimeValidationError::InitWithoutMutability { .. }
             | RuntimeValidationError::InitWithoutPayer { .. }
@@ -464,10 +640,13 @@ impl From<RuntimeValidationError> for ProgramError {
 
 #[cfg(test)]
 mod tests {
+    use solana_program::pubkey::Pubkey as SolanaPubkey;
+
     use crate::{
         AccountOwner, HasOneConstraintDescriptor, InstructionAccountConstraintDescriptor,
-        InstructionAccountDescriptor, InstructionAccountRoleDescriptor, PdaBumpDescriptor,
-        PdaBumpKindDescriptor, PdaDescriptor, PdaSeedDescriptor, PdaSeedKindDescriptor,
+        InstructionAccountDescriptor, InstructionAccountRoleDescriptor, InstructionArg,
+        InstructionArgValue, PdaBumpDescriptor, PdaBumpKindDescriptor, PdaDescriptor,
+        PdaSeedDescriptor, PdaSeedKindDescriptor,
     };
 
     use super::*;
@@ -665,8 +844,8 @@ mod tests {
         assert_eq!(
             ProgramError::from(RuntimeValidationError::AccountOwnerMismatch {
                 account: "vault",
-                expected_owner: Pubkey::new_from_array([1; 32]),
-                actual_owner: Pubkey::new_from_array([2; 32]),
+                expected_owner: SolanaPubkey::new_from_array([1; 32]),
+                actual_owner: SolanaPubkey::new_from_array([2; 32]),
             }),
             ProgramError::IncorrectProgramId
         );
@@ -678,8 +857,8 @@ mod tests {
             ProgramError::from(RuntimeValidationError::PdaMismatch {
                 account: "vault",
                 pda: "vault_pda",
-                expected_key: Pubkey::new_from_array([1; 32]),
-                actual_key: Pubkey::new_from_array([2; 32]),
+                expected_key: SolanaPubkey::new_from_array([1; 32]),
+                actual_key: SolanaPubkey::new_from_array([2; 32]),
             }),
             ProgramError::InvalidSeeds
         );
@@ -699,8 +878,8 @@ mod tests {
             constraints: None,
         }];
 
-        let key = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
+        let key = SolanaPubkey::new_unique();
+        let owner = SolanaPubkey::new_unique();
         let mut lamports = 1;
         let mut data = [0_u8; 8];
         let actual = [AccountInfo::new(
@@ -724,9 +903,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_arg_seed_kind() {
-        let program_id = Pubkey::new_unique();
-        let authority_key = Pubkey::new_unique();
-        let vault_key = Pubkey::new_unique();
+        let program_id = SolanaPubkey::new_unique();
+        let authority_key = SolanaPubkey::new_unique();
+        let vault_key = SolanaPubkey::new_unique();
         let mut authority_lamports = 1;
         let mut vault_lamports = 1;
         let mut authority_data = [];
@@ -793,6 +972,358 @@ mod tests {
                 account: "vault",
                 pda: "vault_pda",
                 kind: "arg",
+            })
+        );
+    }
+
+    #[test]
+    fn validates_arg_seed_with_instruction_args() {
+        let program_id = SolanaPubkey::new_unique();
+        let authority_key = SolanaPubkey::new_unique();
+        let label = "vault";
+        let (vault_key, _bump) = SolanaPubkey::find_program_address(
+            &[label.as_bytes(), authority_key.as_ref()],
+            &program_id,
+        );
+        let mut authority_lamports = 1;
+        let mut vault_lamports = 1;
+        let mut authority_data = [];
+        let mut vault_data = [0_u8; 8];
+        let accounts = [
+            InstructionAccountDescriptor {
+                name: "authority",
+                role: InstructionAccountRoleDescriptor::Signer,
+                account_type: None,
+                owner: None,
+                space: None,
+                is_mut: true,
+                is_signer: true,
+                pda: None,
+                constraints: None,
+            },
+            InstructionAccountDescriptor {
+                name: "vault",
+                role: InstructionAccountRoleDescriptor::Account,
+                account_type: Some("Vault"),
+                owner: Some(AccountOwner::Program),
+                space: Some(8),
+                is_mut: true,
+                is_signer: false,
+                pda: Some("vault_pda"),
+                constraints: None,
+            },
+        ];
+        let actual = [
+            AccountInfo::new(
+                &authority_key,
+                true,
+                true,
+                &mut authority_lamports,
+                &mut authority_data,
+                &program_id,
+                false,
+            ),
+            AccountInfo::new(
+                &vault_key,
+                false,
+                true,
+                &mut vault_lamports,
+                &mut vault_data,
+                &program_id,
+                false,
+            ),
+        ];
+        let pdas = [PdaDescriptor {
+            name: "vault_pda",
+            seeds: &[
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::Arg,
+                    value: "label",
+                },
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::AccountKey,
+                    value: "authority",
+                },
+            ],
+            bump: Some(PdaBumpDescriptor {
+                kind: PdaBumpKindDescriptor::Canonical,
+                value: None,
+            }),
+        }];
+        let instruction_args = [InstructionArg {
+            name: "label",
+            value: InstructionArgValue::String(label),
+        }];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas_and_args(
+                &program_id,
+                &accounts,
+                &actual,
+                &pdas,
+                &instruction_args,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn validates_arg_bump_with_instruction_args() {
+        let program_id = SolanaPubkey::new_unique();
+        let authority_key = SolanaPubkey::new_unique();
+        let (vault_key, bump) =
+            SolanaPubkey::find_program_address(&[b"vault", authority_key.as_ref()], &program_id);
+        let mut authority_lamports = 1;
+        let mut vault_lamports = 1;
+        let mut authority_data = [];
+        let mut vault_data = [0_u8; 8];
+        let accounts = [
+            InstructionAccountDescriptor {
+                name: "authority",
+                role: InstructionAccountRoleDescriptor::Signer,
+                account_type: None,
+                owner: None,
+                space: None,
+                is_mut: true,
+                is_signer: true,
+                pda: None,
+                constraints: None,
+            },
+            InstructionAccountDescriptor {
+                name: "vault",
+                role: InstructionAccountRoleDescriptor::Account,
+                account_type: Some("Vault"),
+                owner: Some(AccountOwner::Program),
+                space: Some(8),
+                is_mut: true,
+                is_signer: false,
+                pda: Some("vault_pda"),
+                constraints: None,
+            },
+        ];
+        let actual = [
+            AccountInfo::new(
+                &authority_key,
+                true,
+                true,
+                &mut authority_lamports,
+                &mut authority_data,
+                &program_id,
+                false,
+            ),
+            AccountInfo::new(
+                &vault_key,
+                false,
+                true,
+                &mut vault_lamports,
+                &mut vault_data,
+                &program_id,
+                false,
+            ),
+        ];
+        let pdas = [PdaDescriptor {
+            name: "vault_pda",
+            seeds: &[
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::Const,
+                    value: "vault",
+                },
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::AccountKey,
+                    value: "authority",
+                },
+            ],
+            bump: Some(PdaBumpDescriptor {
+                kind: PdaBumpKindDescriptor::Arg,
+                value: Some("vault_bump"),
+            }),
+        }];
+        let instruction_args = [InstructionArg {
+            name: "vault_bump",
+            value: InstructionArgValue::U8(bump),
+        }];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas_and_args(
+                &program_id,
+                &accounts,
+                &actual,
+                &pdas,
+                &instruction_args,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn rejects_missing_arg_seed_at_runtime() {
+        let program_id = SolanaPubkey::new_unique();
+        let authority_key = SolanaPubkey::new_unique();
+        let vault_key = SolanaPubkey::new_unique();
+        let mut authority_lamports = 1;
+        let mut vault_lamports = 1;
+        let mut authority_data = [];
+        let mut vault_data = [0_u8; 8];
+        let accounts = [
+            InstructionAccountDescriptor {
+                name: "authority",
+                role: InstructionAccountRoleDescriptor::Signer,
+                account_type: None,
+                owner: None,
+                space: None,
+                is_mut: true,
+                is_signer: true,
+                pda: None,
+                constraints: None,
+            },
+            InstructionAccountDescriptor {
+                name: "vault",
+                role: InstructionAccountRoleDescriptor::Account,
+                account_type: Some("Vault"),
+                owner: Some(AccountOwner::Program),
+                space: Some(8),
+                is_mut: true,
+                is_signer: false,
+                pda: Some("vault_pda"),
+                constraints: None,
+            },
+        ];
+        let actual = [
+            AccountInfo::new(
+                &authority_key,
+                true,
+                true,
+                &mut authority_lamports,
+                &mut authority_data,
+                &program_id,
+                false,
+            ),
+            AccountInfo::new(
+                &vault_key,
+                false,
+                true,
+                &mut vault_lamports,
+                &mut vault_data,
+                &program_id,
+                false,
+            ),
+        ];
+        let pdas = [PdaDescriptor {
+            name: "vault_pda",
+            seeds: &[PdaSeedDescriptor {
+                kind: PdaSeedKindDescriptor::Arg,
+                value: "label",
+            }],
+            bump: Some(PdaBumpDescriptor {
+                kind: PdaBumpKindDescriptor::Canonical,
+                value: None,
+            }),
+        }];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas_and_args(
+                &program_id,
+                &accounts,
+                &actual,
+                &pdas,
+                &[],
+            ),
+            Err(RuntimeValidationError::UnknownPdaSeedArg {
+                account: "vault",
+                pda: "vault_pda",
+                arg: "label",
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_non_u8_arg_bump_type() {
+        let program_id = SolanaPubkey::new_unique();
+        let authority_key = SolanaPubkey::new_unique();
+        let vault_key = SolanaPubkey::new_unique();
+        let mut authority_lamports = 1;
+        let mut vault_lamports = 1;
+        let mut authority_data = [];
+        let mut vault_data = [0_u8; 8];
+        let accounts = [
+            InstructionAccountDescriptor {
+                name: "authority",
+                role: InstructionAccountRoleDescriptor::Signer,
+                account_type: None,
+                owner: None,
+                space: None,
+                is_mut: true,
+                is_signer: true,
+                pda: None,
+                constraints: None,
+            },
+            InstructionAccountDescriptor {
+                name: "vault",
+                role: InstructionAccountRoleDescriptor::Account,
+                account_type: Some("Vault"),
+                owner: Some(AccountOwner::Program),
+                space: Some(8),
+                is_mut: true,
+                is_signer: false,
+                pda: Some("vault_pda"),
+                constraints: None,
+            },
+        ];
+        let actual = [
+            AccountInfo::new(
+                &authority_key,
+                true,
+                true,
+                &mut authority_lamports,
+                &mut authority_data,
+                &program_id,
+                false,
+            ),
+            AccountInfo::new(
+                &vault_key,
+                false,
+                true,
+                &mut vault_lamports,
+                &mut vault_data,
+                &program_id,
+                false,
+            ),
+        ];
+        let pdas = [PdaDescriptor {
+            name: "vault_pda",
+            seeds: &[
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::Const,
+                    value: "vault",
+                },
+                PdaSeedDescriptor {
+                    kind: PdaSeedKindDescriptor::AccountKey,
+                    value: "authority",
+                },
+            ],
+            bump: Some(PdaBumpDescriptor {
+                kind: PdaBumpKindDescriptor::Arg,
+                value: Some("vault_bump"),
+            }),
+        }];
+        let instruction_args = [InstructionArg {
+            name: "vault_bump",
+            value: InstructionArgValue::U64(7),
+        }];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas_and_args(
+                &program_id,
+                &accounts,
+                &actual,
+                &pdas,
+                &instruction_args,
+            ),
+            Err(RuntimeValidationError::InvalidPdaBumpArgType {
+                account: "vault",
+                pda: "vault_pda",
+                arg: "vault_bump",
+                kind: "u64",
             })
         );
     }

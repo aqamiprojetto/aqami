@@ -6,7 +6,7 @@ use std::{
 };
 
 use aqami_spec::{
-    NormalizedAccount, NormalizedAccountOwner, NormalizedError, NormalizedEvent,
+    NormalizedAccount, NormalizedAccountOwner, NormalizedError, NormalizedEvent, NormalizedField,
     NormalizedInstruction, NormalizedInstructionAccount, NormalizedPda, NormalizedPdaBumpKind,
     NormalizedProgram, NormalizedProjectSpec, SeedKind,
 };
@@ -424,8 +424,17 @@ fn render_instruction_rs(
         runtime_imports.push("HasOneConstraintDescriptor");
     }
     let referenced_pdas = referenced_pdas(instruction, program_pdas);
+    let uses_runtime_args = referenced_pdas
+        .iter()
+        .any(|pda| pda_uses_instruction_args(pda));
     if !referenced_pdas.is_empty() {
         runtime_imports.push("PdaDescriptor");
+    }
+    if uses_runtime_args {
+        runtime_imports.push("InstructionArg");
+        runtime_imports.push("InstructionArgValue");
+        runtime_imports.push("validate_program_account_infos_with_pdas_and_args");
+    } else if !referenced_pdas.is_empty() {
         runtime_imports.push("validate_program_account_infos_with_pdas");
     } else {
         runtime_imports.push("validate_program_account_infos");
@@ -512,10 +521,33 @@ fn render_instruction_rs(
     .expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]) -> Result<(), RuntimeValidationError> {{"
+        "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]{}{}) -> Result<(), RuntimeValidationError> {{",
+        if uses_runtime_args { ", args: &" } else { "" },
+        if uses_runtime_args {
+            format!("{}Args", instruction_name_prefix(instruction))
+        } else {
+            String::new()
+        }
     )
     .expect("string write should succeed");
-    if referenced_pdas.is_empty() {
+    if uses_runtime_args {
+        writeln!(&mut output, "    let instruction_args = [").expect("string write should succeed");
+        for field in &instruction.args {
+            writeln!(
+                &mut output,
+                "        InstructionArg {{ name: \"{}\", value: {} }},",
+                field.name,
+                render_runtime_instruction_arg_value(field),
+            )
+            .expect("string write should succeed");
+        }
+        writeln!(&mut output, "    ];").expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "    validate_program_account_infos_with_pdas_and_args(program_id, ACCOUNT_DESCRIPTORS, account_infos, PDA_DESCRIPTORS, &instruction_args)"
+        )
+        .expect("string write should succeed");
+    } else if referenced_pdas.is_empty() {
         writeln!(
             &mut output,
             "    validate_program_account_infos(program_id, ACCOUNT_DESCRIPTORS, account_infos)"
@@ -614,6 +646,45 @@ fn referenced_pdas<'a>(
         .iter()
         .filter(|pda| referenced_names.contains(pda.name.as_str()))
         .collect()
+}
+
+fn pda_uses_instruction_args(pda: &NormalizedPda) -> bool {
+    pda.seeds
+        .iter()
+        .any(|seed| matches!(seed.kind, SeedKind::Arg))
+        || pda
+            .bump
+            .as_ref()
+            .is_some_and(|bump| matches!(bump.kind, NormalizedPdaBumpKind::Arg))
+}
+
+fn render_runtime_instruction_arg_value(field: &NormalizedField) -> String {
+    match field.aqami_type.as_str() {
+        "bool" => format!("InstructionArgValue::Bool(args.{})", field.rust_field_name),
+        "u8" => format!("InstructionArgValue::U8(args.{})", field.rust_field_name),
+        "u16" => format!("InstructionArgValue::U16(args.{})", field.rust_field_name),
+        "u32" => format!("InstructionArgValue::U32(args.{})", field.rust_field_name),
+        "u64" => format!("InstructionArgValue::U64(args.{})", field.rust_field_name),
+        "u128" => format!("InstructionArgValue::U128(args.{})", field.rust_field_name),
+        "i8" => format!("InstructionArgValue::I8(args.{})", field.rust_field_name),
+        "i16" => format!("InstructionArgValue::I16(args.{})", field.rust_field_name),
+        "i32" => format!("InstructionArgValue::I32(args.{})", field.rust_field_name),
+        "i64" => format!("InstructionArgValue::I64(args.{})", field.rust_field_name),
+        "i128" => format!("InstructionArgValue::I128(args.{})", field.rust_field_name),
+        "string" => format!(
+            "InstructionArgValue::String(args.{}.as_str())",
+            field.rust_field_name
+        ),
+        "bytes" => format!(
+            "InstructionArgValue::Bytes(args.{}.as_slice())",
+            field.rust_field_name
+        ),
+        "pubkey" => format!(
+            "InstructionArgValue::Pubkey(args.{})",
+            field.rust_field_name
+        ),
+        _ => panic!("unsupported AQAMI arg type: {}", field.aqami_type),
+    }
 }
 
 fn push_doc_comment(output: &mut String, indent: usize, docs: Option<&str>) {
@@ -885,6 +956,22 @@ mod tests {
         (temp_dir, generated)
     }
 
+    fn generate_programs_from_yaml(yaml: &str) -> (TempDir, Vec<GeneratedProgram>) {
+        let temp_dir = tempdir().expect("temp dir should be created");
+        let spec_path = temp_dir.path().join("fixture.aqami.yaml");
+        fs::write(&spec_path, yaml).expect("fixture spec should be writable");
+        let loaded = load_project_spec(&spec_path).expect("fixture spec should load");
+        let normalized =
+            normalize_project_spec(&loaded.project).expect("fixture spec should normalize");
+        let options = GenerateRustProgramOptions {
+            aqami_runtime_path: PathBuf::from(GOLDEN_RUNTIME_PATH),
+        };
+        let generated = generate_rust_programs(&normalized, temp_dir.path(), &options)
+            .expect("generation should succeed");
+
+        (temp_dir, generated)
+    }
+
     fn read_relative_text_files(root: &Path) -> BTreeMap<String, String> {
         let mut files = BTreeMap::new();
         read_relative_text_files_into(root, root, &mut files);
@@ -981,5 +1068,81 @@ mod tests {
             generated_relative_paths(&generated[0]),
             expected_files.keys().cloned().collect()
         );
+    }
+
+    #[test]
+    fn generates_arg_backed_pda_runtime_validation() {
+        let yaml = r#"
+specVersion: "0.1.0"
+package:
+  name: "aqami-arg-pda-example"
+  version: "0.1.0"
+programs:
+  - name: "vault"
+    accounts:
+      - name: "Vault"
+        owner: "program"
+        space: 64
+        fields:
+          - name: "authority"
+            type: "pubkey"
+    pdas:
+      - name: "vault_pda"
+        seeds:
+          - kind: "const"
+            value: "vault"
+          - kind: "arg"
+            value: "label"
+          - kind: "account_key"
+            value: "authority"
+        bump:
+          kind: "arg"
+          value: "vault_bump"
+    instructions:
+      - name: "create_vault"
+        accounts:
+          - name: "authority"
+            role: "signer"
+            isSigner: true
+          - name: "vault"
+            role: "account"
+            accountType: "Vault"
+            isMut: true
+            pda: "vault_pda"
+            constraints:
+              init: true
+              payer: "authority"
+              rentExempt: true
+          - name: "system_program"
+            role: "system_program"
+        args:
+          - name: "label"
+            type: "string"
+          - name: "vault_bump"
+            type: "u8"
+"#;
+
+        let (_temp_dir, generated) = generate_programs_from_yaml(yaml);
+
+        assert_eq!(generated.len(), 1);
+        let instruction_rs = fs::read_to_string(
+            generated[0]
+                .output_dir
+                .join("src/instructions/create_vault.rs"),
+        )
+        .expect("generated instruction should exist");
+
+        assert!(instruction_rs.contains("InstructionArg"));
+        assert!(instruction_rs.contains("InstructionArgValue"));
+        assert!(instruction_rs.contains("validate_program_account_infos_with_pdas_and_args"));
+        assert!(instruction_rs.contains(
+            "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &CreateVaultArgs)"
+        ));
+        assert!(instruction_rs.contains(
+            "InstructionArg { name: \"label\", value: InstructionArgValue::String(args.label.as_str()) }"
+        ));
+        assert!(instruction_rs.contains(
+            "InstructionArg { name: \"vault_bump\", value: InstructionArgValue::U8(args.vault_bump) }"
+        ));
     }
 }

@@ -72,6 +72,7 @@ Today AQAMI includes:
 - a first `solana-program-test` integration harness around runtime account-meta and owner validation
 - explicit close-target semantics in the spec
 - canonical PDA runtime validation for currently resolvable seed forms
+- arg-backed PDA seed and bump validation through typed runtime instruction arguments
 
 The main implementation crates are:
 
@@ -93,7 +94,8 @@ Right now, AQAMI can:
 - validate generated instruction account descriptors against initial runtime rules
 - validate actual signer, writable, owner, and system-program account semantics in a Solana execution test harness
 - validate canonical PDA derivation for `const` and `account_key` seed forms in the same harness
-- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`
+- validate arg-backed PDA seeds and bumps when typed runtime instruction arguments are supplied explicitly
+- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs
 
 ### What AQAMI Cannot Do Yet
 
@@ -149,6 +151,7 @@ The implementation history has followed this sequence:
 11. runtime owner and system-program validation
 12. canonical PDA runtime validation for currently resolvable seed forms
 13. generated instruction-level runtime validation entrypoints
+14. arg-backed PDA runtime validation through typed instruction arguments
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.

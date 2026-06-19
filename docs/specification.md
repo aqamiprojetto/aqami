@@ -227,6 +227,9 @@ bump:
   value: "vault_bump"
 ```
 
+When `bump.kind` is `arg`, the referenced instruction argument should use AQAMI type `u8`.
+For arg-backed seeds and bumps, AQAMI runtime validation should consume typed instruction arguments directly rather than rely on hidden Borsh, JSON, or string-based packing conventions.
+
 That keeps future generation, diagnostics, and MCP tooling aligned around a machine-readable derivation model instead of handwritten assumptions.
 
 ## Generation Hints

@@ -190,10 +190,10 @@ fn validate_instruction_references(
     known_events: &HashSet<&str>,
     known_errors: &HashSet<&str>,
 ) {
-    let known_instruction_args: HashSet<&str> = instruction
+    let known_instruction_args: HashMap<&str, &str> = instruction
         .args
         .iter()
-        .map(|arg| arg.name.as_str())
+        .map(|arg| (arg.name.as_str(), arg.field_type.as_str()))
         .collect();
     let known_instruction_accounts: HashSet<&str> = instruction
         .accounts
@@ -297,7 +297,7 @@ fn validate_pda_bump_reference(
     kind: PdaBumpKind,
     value: Option<&str>,
     location: &str,
-    known_instruction_args: &HashSet<&str>,
+    known_instruction_args: &HashMap<&str, &str>,
 ) {
     match kind {
         PdaBumpKind::Canonical => {
@@ -317,10 +317,20 @@ fn validate_pda_bump_reference(
                 return;
             };
 
-            if !known_instruction_args.contains(value) {
+            let Some(arg_type) = known_instruction_args.get(value).copied() else {
                 diagnostics.push(Diagnostic {
                     location: format!("{location}.value"),
                     message: format!("PDA bump references unknown instruction argument `{value}`"),
+                });
+                return;
+            };
+
+            if arg_type != "u8" {
+                diagnostics.push(Diagnostic {
+                    location: format!("{location}.value"),
+                    message: format!(
+                        "arg-backed PDA bumps must reference `u8` instruction arguments, found `{arg_type}` on `{value}`"
+                    ),
                 });
             }
         }
@@ -331,13 +341,13 @@ fn validate_seed_reference(
     diagnostics: &mut Vec<Diagnostic>,
     seed: &SeedSpec,
     location: &str,
-    known_instruction_args: &HashSet<&str>,
+    known_instruction_args: &HashMap<&str, &str>,
     known_instruction_accounts: &HashSet<&str>,
 ) {
     match seed.kind {
         SeedKind::Const => {}
         SeedKind::Arg => {
-            if !known_instruction_args.contains(seed.value.as_str()) {
+            if !known_instruction_args.contains_key(seed.value.as_str()) {
                 diagnostics.push(Diagnostic {
                     location: location.to_string(),
                     message: format!(
@@ -512,6 +522,39 @@ mod tests {
             diagnostic
                 .message
                 .contains("PDA bump references unknown instruction argument `missing_bump`")
+        }));
+    }
+
+    #[test]
+    fn arg_bump_requires_u8_instruction_argument() {
+        let (mut project, _) = parse_example();
+        project.programs[0].instructions[0]
+            .args
+            .push(crate::FieldSpec {
+                name: "vault_bump".to_string(),
+                field_type: "u64".to_string(),
+                docs: None,
+            });
+        project.programs[0].instructions[1]
+            .args
+            .push(crate::FieldSpec {
+                name: "vault_bump".to_string(),
+                field_type: "u64".to_string(),
+                docs: None,
+            });
+        project.programs[0].pdas[0].bump = Some(crate::PdaBumpSpec {
+            kind: crate::PdaBumpKind::Arg,
+            value: Some("vault_bump".to_string()),
+        });
+        let raw_value = serde_json::to_value(&project).expect("project should serialize");
+
+        let outcome = validate_project_spec(&project, &raw_value);
+
+        assert!(!outcome.is_valid);
+        assert!(outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic.message.contains(
+                "arg-backed PDA bumps must reference `u8` instruction arguments, found `u64` on `vault_bump`",
+            )
         }));
     }
 
