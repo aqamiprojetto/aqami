@@ -93,6 +93,7 @@ Right now, AQAMI can:
 - validate generated instruction account descriptors against initial runtime rules
 - validate actual signer, writable, owner, and system-program account semantics in a Solana execution test harness
 - validate canonical PDA derivation for `const` and `account_key` seed forms in the same harness
+- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`
 
 ### What AQAMI Cannot Do Yet
 
@@ -147,6 +148,7 @@ The implementation history has followed this sequence:
 10. first `solana-program-test` execution-proof harness
 11. runtime owner and system-program validation
 12. canonical PDA runtime validation for currently resolvable seed forms
+13. generated instruction-level runtime validation entrypoints
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.

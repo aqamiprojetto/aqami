@@ -1,6 +1,8 @@
 mod descriptors;
 mod validate;
 
+pub use solana_program::{account_info::AccountInfo, pubkey::Pubkey as SolanaPubkey};
+
 pub use descriptors::{
     AccountOwner, AccountTypeDescriptor, HasOneConstraintDescriptor,
     InstructionAccountConstraintDescriptor, InstructionAccountDescriptor,

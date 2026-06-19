@@ -133,7 +133,7 @@ fn generate_rust_program(
     for instruction in &program.instructions {
         write_file(
             &instructions_dir.join(format!("{}.rs", instruction.rust_module_name)),
-            &render_instruction_rs(instruction),
+            &render_instruction_rs(instruction, &program.pdas),
             &mut files,
         )?;
     }
@@ -386,14 +386,19 @@ fn render_state_account_rs(account: &NormalizedAccount) -> String {
     output
 }
 
-fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
+fn render_instruction_rs(
+    instruction: &NormalizedInstruction,
+    program_pdas: &[NormalizedPda],
+) -> String {
     let mut output = String::new();
     writeln!(&mut output, "use crate::errors::ProgramError;").expect("string write should succeed");
     let mut runtime_imports = vec![
+        "AccountInfo",
         "InstructionAccountDescriptor",
         "InstructionAccountRoleDescriptor",
         "Pubkey",
         "RuntimeValidationError",
+        "SolanaPubkey",
         "validate_instruction_accounts",
     ];
     if instruction
@@ -418,6 +423,13 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     }) {
         runtime_imports.push("HasOneConstraintDescriptor");
     }
+    let referenced_pdas = referenced_pdas(instruction, program_pdas);
+    if !referenced_pdas.is_empty() {
+        runtime_imports.push("PdaDescriptor");
+        runtime_imports.push("validate_program_account_infos_with_pdas");
+    } else {
+        runtime_imports.push("validate_program_account_infos");
+    }
     writeln!(
         &mut output,
         "use aqami_runtime::{{{}}};",
@@ -437,6 +449,18 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
         .collect::<BTreeSet<_>>();
     for import in account_imports {
         writeln!(&mut output, "use crate::{import};").expect("string write should succeed");
+    }
+    if !referenced_pdas.is_empty() {
+        writeln!(
+            &mut output,
+            "use crate::pdas::{{{}}};",
+            referenced_pdas
+                .iter()
+                .map(|pda| format!("{}_DESCRIPTOR", pda.rust_const_name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .expect("string write should succeed");
     }
 
     writeln!(&mut output).expect("string write should succeed");
@@ -463,6 +487,54 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
     }
     writeln!(&mut output, "];").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
+    if !referenced_pdas.is_empty() {
+        writeln!(
+            &mut output,
+            "/// PDA descriptors referenced by this instruction's runtime validation path."
+        )
+        .expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "pub const PDA_DESCRIPTORS: &[PdaDescriptor] = &[{}];",
+            referenced_pdas
+                .iter()
+                .map(|pda| format!("{}_DESCRIPTOR", pda.rust_const_name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .expect("string write should succeed");
+        writeln!(&mut output).expect("string write should succeed");
+    }
+    writeln!(
+        &mut output,
+        "/// Validates real Solana runtime accounts for this instruction against AQAMI descriptors."
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]) -> Result<(), RuntimeValidationError> {{"
+    )
+    .expect("string write should succeed");
+    if referenced_pdas.is_empty() {
+        writeln!(
+            &mut output,
+            "    validate_program_account_infos(program_id, ACCOUNT_DESCRIPTORS, account_infos)"
+        )
+        .expect("string write should succeed");
+    } else {
+        writeln!(
+            &mut output,
+            "    validate_program_account_infos_with_pdas(program_id, ACCOUNT_DESCRIPTORS, account_infos, PDA_DESCRIPTORS)"
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "/// Validates descriptor-to-descriptor AQAMI invariants for this instruction."
+    )
+    .expect("string write should succeed");
     writeln!(
         &mut output,
         "pub fn validate_account_descriptors() -> Result<(), RuntimeValidationError> {{"
@@ -526,6 +598,22 @@ fn render_instruction_rs(instruction: &NormalizedInstruction) -> String {
         .expect("string write should succeed");
     writeln!(&mut output, "}}").expect("string write should succeed");
     output
+}
+
+fn referenced_pdas<'a>(
+    instruction: &NormalizedInstruction,
+    program_pdas: &'a [NormalizedPda],
+) -> Vec<&'a NormalizedPda> {
+    let referenced_names = instruction
+        .accounts
+        .iter()
+        .filter_map(|account| account.pda.as_deref())
+        .collect::<BTreeSet<_>>();
+
+    program_pdas
+        .iter()
+        .filter(|pda| referenced_names.contains(pda.name.as_str()))
+        .collect()
 }
 
 fn push_doc_comment(output: &mut String, indent: usize, docs: Option<&str>) {
@@ -763,26 +851,90 @@ fn escape_toml_basic_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use aqami_spec::{load_project_spec, normalize_project_spec};
-    use tempfile::tempdir;
+    use tempfile::{TempDir, tempdir};
 
     use super::*;
 
-    #[test]
-    fn generates_expected_project_files() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/specs/escrow.aqami.yaml");
-        let loaded = load_project_spec(path).expect("example should load");
+    const GOLDEN_RUNTIME_PATH: &str = "/aqami/test/aqami-runtime";
+
+    fn escrow_spec_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/specs/escrow.aqami.yaml")
+    }
+
+    fn escrow_fixture_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/rust_program/escrow")
+    }
+
+    fn generate_escrow_program_fixture() -> (TempDir, Vec<GeneratedProgram>) {
+        let loaded = load_project_spec(escrow_spec_path()).expect("example should load");
         let normalized = normalize_project_spec(&loaded.project).expect("example should normalize");
         let temp_dir = tempdir().expect("temp dir should be created");
         let options = GenerateRustProgramOptions {
-            aqami_runtime_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aqami-runtime"),
+            aqami_runtime_path: PathBuf::from(GOLDEN_RUNTIME_PATH),
         };
-
         let generated = generate_rust_programs(&normalized, temp_dir.path(), &options)
             .expect("generation should succeed");
+
+        (temp_dir, generated)
+    }
+
+    fn read_relative_text_files(root: &Path) -> BTreeMap<String, String> {
+        let mut files = BTreeMap::new();
+        read_relative_text_files_into(root, root, &mut files);
+        files
+    }
+
+    fn read_relative_text_files_into(
+        root: &Path,
+        dir: &Path,
+        files: &mut BTreeMap<String, String>,
+    ) {
+        let mut entries = fs::read_dir(dir)
+            .expect("directory should be readable")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("directory entries should be readable");
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                read_relative_text_files_into(root, &path, files);
+                continue;
+            }
+
+            let relative_path = path
+                .strip_prefix(root)
+                .expect("path should stay under root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let contents = fs::read_to_string(&path).expect("fixture file should be readable");
+            files.insert(relative_path, contents);
+        }
+    }
+
+    fn generated_relative_paths(program: &GeneratedProgram) -> BTreeSet<String> {
+        program
+            .files
+            .iter()
+            .map(|path| {
+                path.strip_prefix(&program.output_dir)
+                    .expect("generated file should stay under output dir")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn generates_expected_project_files() {
+        let (_temp_dir, generated) = generate_escrow_program_fixture();
 
         assert_eq!(generated.len(), 1);
         let output_dir = &generated[0].output_dir;
@@ -798,11 +950,14 @@ mod tests {
         let pda_rs = fs::read_to_string(output_dir.join("src/pdas.rs"))
             .expect("generated pdas.rs should exist");
 
-        assert!(cargo_toml.contains("aqami-runtime = { path = "));
+        assert!(cargo_toml.contains(GOLDEN_RUNTIME_PATH));
         assert!(lib_rs.contains("pub mod instructions;"));
         assert!(!lib_rs.contains("pub mod types;"));
         assert!(instruction_rs.contains("pub struct CreateEscrowAccounts"));
         assert!(instruction_rs.contains("pub const ACCOUNT_DESCRIPTORS"));
+        assert!(instruction_rs.contains("pub const PDA_DESCRIPTORS"));
+        assert!(instruction_rs.contains("pub fn validate_runtime_accounts("));
+        assert!(instruction_rs.contains("validate_program_account_infos_with_pdas"));
         assert!(instruction_rs.contains("pub fn validate_account_descriptors()"));
         assert!(instruction_rs.contains("account_type=Escrow"));
         assert!(instruction_rs.contains("space=128"));
@@ -811,5 +966,20 @@ mod tests {
         assert!(pda_rs.contains("pub const ESCROW_PDA_DESCRIPTOR: PdaDescriptor"));
         assert!(pda_rs.contains("PdaBumpKindDescriptor::Canonical"));
         assert!(instruction_rs.contains("todo!(\"Implement create_escrow\")"));
+    }
+
+    #[test]
+    fn generated_escrow_program_matches_golden_fixture() {
+        let (_temp_dir, generated) = generate_escrow_program_fixture();
+
+        assert_eq!(generated.len(), 1);
+        let actual_files = read_relative_text_files(&generated[0].output_dir);
+        let expected_files = read_relative_text_files(&escrow_fixture_dir());
+
+        assert_eq!(actual_files, expected_files);
+        assert_eq!(
+            generated_relative_paths(&generated[0]),
+            expected_files.keys().cloned().collect()
+        );
     }
 }

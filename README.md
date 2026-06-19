@@ -108,6 +108,7 @@ Generated Rust skeletons now depend on `aqami-runtime` instead of re-declaring t
 That gives AQAMI its first shared runtime contract between spec normalization, code generation, and generated projects.
 AQAMI now also has its first `solana-program-test` integration harness proving runtime account-meta and owner validation under actual transaction execution.
 AQAMI can now also validate canonical PDAs derived from explicit `const` and `account_key` seed metadata in the same execution harness.
+Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly instead of stopping at descriptor-only checks.
 
 ## Performance Position
 
@@ -229,6 +230,7 @@ As of June 19, 2026, this repository has a stronger executable foundation:
 - a first shared runtime crate for account and instruction descriptors
 - a first `solana-program-test` integration test path
 - runtime owner, system-program, and canonical PDA validation helpers
+- generated instruction-level runtime validation entrypoints
 - CLI `validate`, `inspect`, and `generate` commands
 
 The next most valuable step is to deepen runtime-aware execution behavior further around unresolved seed sources, account-data constraints, and generated instruction boundaries, and then expand generated-program testing on top of the Solana integration harness.
