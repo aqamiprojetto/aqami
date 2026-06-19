@@ -6,6 +6,7 @@
 - Prefer durable architecture over quick local hacks.
 - Make agent behavior safer by reducing ambiguity, not by relying on better prompting alone.
 - Keep public framework surfaces explicit, documented, versioned, and easy to inspect.
+- Strive for zero technical debt by removing temporary seams, stale assumptions, and avoidable drift instead of normalizing them.
 
 ## Primary Priorities
 
@@ -168,6 +169,7 @@ Good candidates include:
 - Avoid speculative abstractions with no near-term use.
 - Preserve a clean dependency direction between crates.
 - Add concise comments only where invariants or tradeoffs are not obvious.
+- Prefer retiring technical debt in the same change when it is understood and safely fixable, rather than documenting it as permanent clutter.
 - Never hand-edit generated outputs if the repository later establishes them as generated artifacts.
 
 ## Review Mindset

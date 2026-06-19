@@ -40,6 +40,7 @@ AQAMI aims to make high-quality Solana development easier for both experienced e
 - `Generate responsibly`: generate the repetitive parts, keep the critical parts reviewable
 - `Agent-operable`: everything important should be discoverable through docs, schemas, examples, CLI output, or MCP tools
 - `Performance-aware`: optimize runtime-facing and generated hot paths aggressively, while keeping tooling layers explicit and maintainable
+- `Zero-debt mindset`: do not normalize technical debt; fix drift, stale assumptions, and temporary seams as soon as they are understood well enough to remove safely
 
 ## What "AI-First" Means Here
 
@@ -216,6 +217,7 @@ AQAMI should optimize for:
 - explicit Solana invariants
 - high-value documentation
 - strong tests around generated and security-relevant behavior
+- a zero-technical-debt culture where known debt is treated as a defect to retire, not a permanent layer to build on
 
 The framework should be something a serious team can trust, not a demo that happens to compile.
 
