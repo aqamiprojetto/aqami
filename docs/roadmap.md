@@ -73,6 +73,8 @@ Today AQAMI includes:
 - explicit close-target semantics in the spec
 - canonical PDA runtime validation for currently resolvable seed forms
 - arg-backed PDA seed and bump validation through typed runtime instruction arguments
+- `account_field` PDA seed validation through explicit typed pubkey-field runtime context
+- runtime `hasOne` validation through explicit typed pubkey-field runtime context
 
 The main implementation crates are:
 
@@ -95,7 +97,8 @@ Right now, AQAMI can:
 - validate actual signer, writable, owner, and system-program account semantics in a Solana execution test harness
 - validate canonical PDA derivation for `const` and `account_key` seed forms in the same harness
 - validate arg-backed PDA seeds and bumps when typed runtime instruction arguments are supplied explicitly
-- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs
+- validate `account_field` PDA seeds and `hasOne` relationships when typed pubkey field context is supplied explicitly
+- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
 
 ### What AQAMI Cannot Do Yet
 
@@ -152,6 +155,7 @@ The implementation history has followed this sequence:
 12. canonical PDA runtime validation for currently resolvable seed forms
 13. generated instruction-level runtime validation entrypoints
 14. arg-backed PDA runtime validation through typed instruction arguments
+15. explicit typed-context validation for `account_field` PDA seeds and runtime `hasOne`
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.
@@ -160,9 +164,9 @@ Each phase was chosen to strengthen AQAMI's source of truth before adding more r
 
 ### Phase 1: Stronger Solana Spec Semantics
 
-Next, AQAMI should deepen the spec with additional Solana-relevant constraints such as:
+Next, AQAMI should deepen the spec with additional Solana-relevant constraints and broader execution semantics such as:
 
-- account relationship constraints like `has_one`
+- richer account relationship constraints beyond the current explicit `hasOne` model
 - richer PDA and bump semantics
 - richer account sizing and layout metadata
 - close semantics and lifecycle relationships

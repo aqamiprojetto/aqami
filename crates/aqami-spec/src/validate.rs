@@ -6,7 +6,7 @@ use std::{
 use serde::Serialize;
 
 use crate::{
-    AqamiProjectSpec, FrameworkErrorSpec, InstructionAccountRole, InstructionSpec,
+    AccountSpec, AqamiProjectSpec, FrameworkErrorSpec, InstructionAccountRole, InstructionSpec,
     PROJECT_SCHEMA_JSON, PdaBumpKind, PdaSpec, SeedKind, SeedSpec, normalization_diagnostics,
 };
 
@@ -122,6 +122,11 @@ fn semantic_diagnostics(project: &AqamiProjectSpec, diagnostics: &mut Vec<Diagno
             .iter()
             .map(|pda| (pda.name.as_str(), pda))
             .collect();
+        let known_account_types: HashMap<&str, &AccountSpec> = program
+            .accounts
+            .iter()
+            .map(|account| (account.name.as_str(), account))
+            .collect();
         let known_events: HashSet<&str> = program
             .events
             .iter()
@@ -174,6 +179,7 @@ fn semantic_diagnostics(project: &AqamiProjectSpec, diagnostics: &mut Vec<Diagno
                 diagnostics,
                 instruction,
                 &instruction_location,
+                &known_account_types,
                 &known_pdas,
                 &known_events,
                 &known_errors,
@@ -186,6 +192,7 @@ fn validate_instruction_references(
     diagnostics: &mut Vec<Diagnostic>,
     instruction: &InstructionSpec,
     instruction_location: &str,
+    known_account_types: &HashMap<&str, &AccountSpec>,
     known_pdas: &HashMap<&str, &PdaSpec>,
     known_events: &HashSet<&str>,
     known_errors: &HashSet<&str>,
@@ -220,8 +227,10 @@ fn validate_instruction_references(
                             diagnostics,
                             seed,
                             &format!("{account_location}.pda.seeds[{seed_index}]"),
+                            instruction,
                             &known_instruction_args,
                             &known_instruction_accounts,
+                            known_account_types,
                         );
                     }
 
@@ -341,8 +350,10 @@ fn validate_seed_reference(
     diagnostics: &mut Vec<Diagnostic>,
     seed: &SeedSpec,
     location: &str,
+    instruction: &InstructionSpec,
     known_instruction_args: &HashMap<&str, &str>,
     known_instruction_accounts: &HashSet<&str>,
+    known_account_types: &HashMap<&str, &AccountSpec>,
 ) {
     match seed.kind {
         SeedKind::Const => {}
@@ -369,7 +380,7 @@ fn validate_seed_reference(
             }
         }
         SeedKind::AccountField => {
-            let Some((account_name, _field_name)) = seed.value.split_once('.') else {
+            let Some((account_name, field_name)) = seed.value.split_once('.') else {
                 diagnostics.push(Diagnostic {
                     location: location.to_string(),
                     message: "account_field seed values must use `account.field`".to_string(),
@@ -384,6 +395,50 @@ fn validate_seed_reference(
                         "PDA seed references unknown instruction account `{account_name}`"
                     ),
                 });
+                return;
+            }
+
+            let Some(source_account) = instruction
+                .accounts
+                .iter()
+                .find(|account| account.name == account_name)
+            else {
+                return;
+            };
+
+            let Some(account_type_name) = source_account.account_type.as_deref() else {
+                diagnostics.push(Diagnostic {
+                    location: location.to_string(),
+                    message: format!(
+                        "account_field PDA seeds currently require instruction account `{account_name}` to declare `accountType`"
+                    ),
+                });
+                return;
+            };
+
+            let Some(account_type) = known_account_types.get(account_type_name).copied() else {
+                return;
+            };
+
+            match account_type
+                .fields
+                .iter()
+                .find(|field| field.name == field_name)
+            {
+                Some(field) if field.field_type == "pubkey" => {}
+                Some(field) => diagnostics.push(Diagnostic {
+                    location: location.to_string(),
+                    message: format!(
+                        "account_field PDA seed `{}` on account type `{account_type_name}` must use AQAMI type `pubkey`, found `{}`",
+                        seed.value, field.field_type
+                    ),
+                }),
+                None => diagnostics.push(Diagnostic {
+                    location: location.to_string(),
+                    message: format!(
+                        "account_field PDA seed references unknown field `{field_name}` on account type `{account_type_name}`"
+                    ),
+                }),
             }
         }
     }
@@ -554,6 +609,40 @@ mod tests {
         assert!(outcome.diagnostics.iter().any(|diagnostic| {
             diagnostic.message.contains(
                 "arg-backed PDA bumps must reference `u8` instruction arguments, found `u64` on `vault_bump`",
+            )
+        }));
+    }
+
+    #[test]
+    fn account_field_seed_requires_explicit_account_type() {
+        let (mut project, _) = parse_example();
+        project.programs[0].pdas[0].seeds[1].kind = crate::SeedKind::AccountField;
+        project.programs[0].pdas[0].seeds[1].value = "beneficiary.authority".to_string();
+        let raw_value = serde_json::to_value(&project).expect("project should serialize");
+
+        let outcome = validate_project_spec(&project, &raw_value);
+
+        assert!(!outcome.is_valid);
+        assert!(outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic.message.contains(
+                "account_field PDA seeds currently require instruction account `beneficiary` to declare `accountType`",
+            )
+        }));
+    }
+
+    #[test]
+    fn account_field_seed_requires_pubkey_field_type() {
+        let (mut project, _) = parse_example();
+        project.programs[0].pdas[0].seeds[1].kind = crate::SeedKind::AccountField;
+        project.programs[0].pdas[0].seeds[1].value = "escrow.amount".to_string();
+        let raw_value = serde_json::to_value(&project).expect("project should serialize");
+
+        let outcome = validate_project_spec(&project, &raw_value);
+
+        assert!(!outcome.is_valid);
+        assert!(outcome.diagnostics.iter().any(|diagnostic| {
+            diagnostic.message.contains(
+                "account_field PDA seed `escrow.amount` on account type `Escrow` must use AQAMI type `pubkey`, found `u64`",
             )
         }));
     }

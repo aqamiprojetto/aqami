@@ -49,6 +49,19 @@ pub struct InstructionArg<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstructionAccountPubkeyField<'a> {
+    pub account: &'a str,
+    pub field: &'a str,
+    pub value: Pubkey,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct InstructionValidationContext<'a> {
+    pub args: &'a [InstructionArg<'a>],
+    pub account_pubkey_fields: &'a [InstructionAccountPubkeyField<'a>],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PdaSeedDescriptor {
     pub kind: PdaSeedKindDescriptor,
     pub value: &'static str,

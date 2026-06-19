@@ -1,5 +1,5 @@
 use crate::errors::ProgramError;
-use aqami_runtime::{AccountInfo, InstructionAccountDescriptor, InstructionAccountRoleDescriptor, Pubkey, RuntimeValidationError, SolanaPubkey, validate_instruction_accounts, AccountOwner, InstructionAccountConstraintDescriptor, HasOneConstraintDescriptor, PdaDescriptor, validate_program_account_infos_with_pdas};
+use aqami_runtime::{AccountInfo, InstructionAccountDescriptor, InstructionAccountRoleDescriptor, Pubkey, RuntimeValidationError, SolanaPubkey, validate_instruction_accounts, AccountOwner, InstructionAccountConstraintDescriptor, HasOneConstraintDescriptor, PdaDescriptor, InstructionAccountPubkeyField, InstructionValidationContext, validate_program_account_infos_with_context};
 use crate::state::escrow::Escrow;
 use crate::pdas::{ESCROW_PDA_DESCRIPTOR};
 
@@ -13,8 +13,12 @@ pub const ACCOUNT_DESCRIPTORS: &[InstructionAccountDescriptor] = &[
 pub const PDA_DESCRIPTORS: &[PdaDescriptor] = &[ESCROW_PDA_DESCRIPTOR];
 
 /// Validates real Solana runtime accounts for this instruction against AQAMI descriptors.
-pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]) -> Result<(), RuntimeValidationError> {
-    validate_program_account_infos_with_pdas(program_id, ACCOUNT_DESCRIPTORS, account_infos, PDA_DESCRIPTORS)
+pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], account_data: &ReleaseEscrowAccountData<'_>) -> Result<(), RuntimeValidationError> {
+    let account_pubkey_fields = [
+        InstructionAccountPubkeyField { account: "escrow", field: "depositor", value: account_data.escrow.depositor },
+        InstructionAccountPubkeyField { account: "escrow", field: "beneficiary", value: account_data.escrow.beneficiary },
+    ];
+    validate_program_account_infos_with_context(program_id, ACCOUNT_DESCRIPTORS, account_infos, PDA_DESCRIPTORS, &InstructionValidationContext { args: &[], account_pubkey_fields: &account_pubkey_fields })
 }
 
 /// Validates descriptor-to-descriptor AQAMI invariants for this instruction.
@@ -35,6 +39,11 @@ pub struct ReleaseEscrowAccounts {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseEscrowArgs {
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseEscrowAccountData<'a> {
+    pub escrow: &'a Escrow,
 }
 
 pub fn execute(_accounts: &mut ReleaseEscrowAccounts, _args: ReleaseEscrowArgs) -> Result<(), ProgramError> {

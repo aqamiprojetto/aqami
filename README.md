@@ -109,7 +109,8 @@ That gives AQAMI its first shared runtime contract between spec normalization, c
 AQAMI now also has its first `solana-program-test` integration harness proving runtime account-meta and owner validation under actual transaction execution.
 AQAMI can now also validate canonical PDAs derived from explicit `const` and `account_key` seed metadata in the same execution harness.
 AQAMI can now also validate arg-backed PDA seeds and bumps through explicit typed runtime argument context instead of opaque byte-packing conventions.
-Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly, including typed arg wiring when a PDA depends on instruction arguments.
+AQAMI can now also validate `account_field` PDA seeds and `hasOne` account relationships through explicit typed pubkey-field context supplied by generated instruction entrypoints.
+Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly, including typed arg wiring for arg-backed PDAs and explicit typed account-data wiring for pubkey field checks.
 
 ## Performance Position
 
@@ -230,8 +231,8 @@ As of June 19, 2026, this repository has a stronger executable foundation:
 - deterministic Rust skeleton generation
 - a first shared runtime crate for account and instruction descriptors
 - a first `solana-program-test` integration test path
-- runtime owner, system-program, canonical PDA, and arg-backed PDA validation helpers
-- generated instruction-level runtime validation entrypoints with typed arg wiring for arg-backed PDAs
+- runtime owner, system-program, canonical PDA, arg-backed PDA, `account_field` PDA, and `hasOne` validation helpers
+- generated instruction-level runtime validation entrypoints with typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
 - CLI `validate`, `inspect`, and `generate` commands
 
-The next most valuable step is to deepen runtime-aware execution behavior further around unresolved `account_field` seed sources, account-data constraints such as `hasOne`, and fuller generated instruction boundaries, and then expand generated-program testing on top of the Solana integration harness.
+The next most valuable step is to deepen generated execution behavior beyond validation entrypoints, broaden more account-layout-aware runtime contracts without introducing hidden decoding conventions, and expand generated-program testing on top of the Solana integration harness.

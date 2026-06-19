@@ -204,6 +204,7 @@ The current spec supports:
 
 - `canonical`
 - `arg`
+- `account_field`
 
 Recommended shape:
 
@@ -229,6 +230,8 @@ bump:
 
 When `bump.kind` is `arg`, the referenced instruction argument should use AQAMI type `u8`.
 For arg-backed seeds and bumps, AQAMI runtime validation should consume typed instruction arguments directly rather than rely on hidden Borsh, JSON, or string-based packing conventions.
+For `account_field` seeds, the referenced instruction account should declare `accountType`, and the referenced field should use AQAMI type `pubkey`.
+Runtime validation for those seeds should consume explicit typed pubkey-field context supplied by generated instruction boundaries rather than decode raw account bytes through hidden layout assumptions.
 
 That keeps future generation, diagnostics, and MCP tooling aligned around a machine-readable derivation model instead of handwritten assumptions.
 

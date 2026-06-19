@@ -133,7 +133,7 @@ fn generate_rust_program(
     for instruction in &program.instructions {
         write_file(
             &instructions_dir.join(format!("{}.rs", instruction.rust_module_name)),
-            &render_instruction_rs(instruction, &program.pdas),
+            &render_instruction_rs(instruction, program),
             &mut files,
         )?;
     }
@@ -388,7 +388,7 @@ fn render_state_account_rs(account: &NormalizedAccount) -> String {
 
 fn render_instruction_rs(
     instruction: &NormalizedInstruction,
-    program_pdas: &[NormalizedPda],
+    program: &NormalizedProgram,
 ) -> String {
     let mut output = String::new();
     writeln!(&mut output, "use crate::errors::ProgramError;").expect("string write should succeed");
@@ -423,17 +423,26 @@ fn render_instruction_rs(
     }) {
         runtime_imports.push("HasOneConstraintDescriptor");
     }
-    let referenced_pdas = referenced_pdas(instruction, program_pdas);
+    let referenced_pdas = referenced_pdas(instruction, &program.pdas);
     let uses_runtime_args = referenced_pdas
         .iter()
         .any(|pda| pda_uses_instruction_args(pda));
+    let required_pubkey_fields = required_instruction_account_pubkey_fields(instruction, program);
+    let uses_state_inputs = !required_pubkey_fields.is_empty();
+    let uses_runtime_context = uses_runtime_args || uses_state_inputs;
     if !referenced_pdas.is_empty() {
         runtime_imports.push("PdaDescriptor");
     }
     if uses_runtime_args {
         runtime_imports.push("InstructionArg");
         runtime_imports.push("InstructionArgValue");
-        runtime_imports.push("validate_program_account_infos_with_pdas_and_args");
+    }
+    if uses_state_inputs {
+        runtime_imports.push("InstructionAccountPubkeyField");
+    }
+    if uses_runtime_context {
+        runtime_imports.push("InstructionValidationContext");
+        runtime_imports.push("validate_program_account_infos_with_context");
     } else if !referenced_pdas.is_empty() {
         runtime_imports.push("validate_program_account_infos_with_pdas");
     } else {
@@ -521,30 +530,72 @@ fn render_instruction_rs(
     .expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]{}{}) -> Result<(), RuntimeValidationError> {{",
+        "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>]{}{}{}) -> Result<(), RuntimeValidationError> {{",
         if uses_runtime_args { ", args: &" } else { "" },
         if uses_runtime_args {
             format!("{}Args", instruction_name_prefix(instruction))
         } else {
             String::new()
-        }
+        },
+        if uses_state_inputs {
+            format!(
+                ", account_data: &{}AccountData<'_>",
+                instruction_name_prefix(instruction)
+            )
+        } else {
+            String::new()
+        },
     )
     .expect("string write should succeed");
-    if uses_runtime_args {
-        writeln!(&mut output, "    let instruction_args = [").expect("string write should succeed");
-        for field in &instruction.args {
-            writeln!(
-                &mut output,
-                "        InstructionArg {{ name: \"{}\", value: {} }},",
-                field.name,
-                render_runtime_instruction_arg_value(field),
-            )
-            .expect("string write should succeed");
+    if uses_runtime_context {
+        if uses_runtime_args {
+            writeln!(&mut output, "    let instruction_args = [")
+                .expect("string write should succeed");
+            for field in &instruction.args {
+                writeln!(
+                    &mut output,
+                    "        InstructionArg {{ name: \"{}\", value: {} }},",
+                    field.name,
+                    render_runtime_instruction_arg_value(field),
+                )
+                .expect("string write should succeed");
+            }
+            writeln!(&mut output, "    ];").expect("string write should succeed");
         }
-        writeln!(&mut output, "    ];").expect("string write should succeed");
+        if uses_state_inputs {
+            writeln!(&mut output, "    let account_pubkey_fields = [")
+                .expect("string write should succeed");
+            for field in &required_pubkey_fields {
+                writeln!(
+                    &mut output,
+                    "        InstructionAccountPubkeyField {{ account: \"{}\", field: \"{}\", value: account_data.{}.{} }},",
+                    field.instruction_account.name,
+                    field.field_name,
+                    field.instruction_account.rust_field_name,
+                    field.field_rust_name,
+                )
+                .expect("string write should succeed");
+            }
+            writeln!(&mut output, "    ];").expect("string write should succeed");
+        }
         writeln!(
             &mut output,
-            "    validate_program_account_infos_with_pdas_and_args(program_id, ACCOUNT_DESCRIPTORS, account_infos, PDA_DESCRIPTORS, &instruction_args)"
+            "    validate_program_account_infos_with_context(program_id, ACCOUNT_DESCRIPTORS, account_infos, {}, &InstructionValidationContext {{ args: {}, account_pubkey_fields: {} }})",
+            if referenced_pdas.is_empty() {
+                "&[]"
+            } else {
+                "PDA_DESCRIPTORS"
+            },
+            if uses_runtime_args {
+                "&instruction_args"
+            } else {
+                "&[]"
+            },
+            if uses_state_inputs {
+                "&account_pubkey_fields"
+            } else {
+                "&[]"
+            },
         )
         .expect("string write should succeed");
     } else if referenced_pdas.is_empty() {
@@ -619,6 +670,30 @@ fn render_instruction_rs(
     }
     writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
+    if uses_state_inputs {
+        writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
+            .expect("string write should succeed");
+        writeln!(
+            &mut output,
+            "pub struct {}AccountData<'a> {{",
+            instruction_name_prefix(instruction)
+        )
+        .expect("string write should succeed");
+        let mut rendered_accounts = BTreeSet::new();
+        for field in &required_pubkey_fields {
+            if !rendered_accounts.insert(field.instruction_account.name.clone()) {
+                continue;
+            }
+            writeln!(
+                &mut output,
+                "    pub {}: &'a {},",
+                field.instruction_account.rust_field_name, field.instruction_account.rust_type_name
+            )
+            .expect("string write should succeed");
+        }
+        writeln!(&mut output, "}}").expect("string write should succeed");
+        writeln!(&mut output).expect("string write should succeed");
+    }
     writeln!(
         &mut output,
         "pub fn execute(_accounts: &mut {}Accounts, _args: {}Args) -> Result<(), ProgramError> {{",
@@ -646,6 +721,64 @@ fn referenced_pdas<'a>(
         .iter()
         .filter(|pda| referenced_names.contains(pda.name.as_str()))
         .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RequiredInstructionAccountPubkeyField<'a> {
+    instruction_account: &'a NormalizedInstructionAccount,
+    field_name: &'a str,
+    field_rust_name: &'a str,
+}
+
+fn required_instruction_account_pubkey_fields<'a>(
+    instruction: &'a NormalizedInstruction,
+    program: &'a NormalizedProgram,
+) -> Vec<RequiredInstructionAccountPubkeyField<'a>> {
+    let mut required_names = BTreeSet::new();
+
+    for account in &instruction.accounts {
+        if let Some(constraints) = account.constraints.as_ref() {
+            for relation in &constraints.has_one {
+                required_names.insert((account.name.as_str(), relation.field.as_str()));
+            }
+        }
+    }
+
+    for pda in referenced_pdas(instruction, &program.pdas) {
+        for seed in &pda.seeds {
+            if let SeedKind::AccountField = seed.kind
+                && let Some((account_name, field_name)) = seed.value.split_once('.')
+            {
+                required_names.insert((account_name, field_name));
+            }
+        }
+    }
+
+    let mut required_fields = Vec::new();
+    for instruction_account in &instruction.accounts {
+        let Some(account_type_name) = instruction_account.account_type.as_deref() else {
+            continue;
+        };
+        let Some(account_type) = program
+            .accounts
+            .iter()
+            .find(|account| account.name == account_type_name)
+        else {
+            continue;
+        };
+
+        for field in &account_type.fields {
+            if required_names.contains(&(instruction_account.name.as_str(), field.name.as_str())) {
+                required_fields.push(RequiredInstructionAccountPubkeyField {
+                    instruction_account,
+                    field_name: field.name.as_str(),
+                    field_rust_name: field.rust_field_name.as_str(),
+                });
+            }
+        }
+    }
+
+    required_fields
 }
 
 fn pda_uses_instruction_args(pda: &NormalizedPda) -> bool {
@@ -1032,6 +1165,9 @@ mod tests {
         let instruction_rs =
             fs::read_to_string(output_dir.join("src/instructions/create_escrow.rs"))
                 .expect("generated instruction should exist");
+        let release_instruction_rs =
+            fs::read_to_string(output_dir.join("src/instructions/release_escrow.rs"))
+                .expect("generated release instruction should exist");
         let account_rs = fs::read_to_string(output_dir.join("src/state/escrow.rs"))
             .expect("generated account should exist");
         let pda_rs = fs::read_to_string(output_dir.join("src/pdas.rs"))
@@ -1046,6 +1182,10 @@ mod tests {
         assert!(instruction_rs.contains("pub fn validate_runtime_accounts("));
         assert!(instruction_rs.contains("validate_program_account_infos_with_pdas"));
         assert!(instruction_rs.contains("pub fn validate_account_descriptors()"));
+        assert!(release_instruction_rs.contains("validate_program_account_infos_with_context"));
+        assert!(release_instruction_rs.contains("InstructionAccountPubkeyField"));
+        assert!(release_instruction_rs.contains("InstructionValidationContext"));
+        assert!(release_instruction_rs.contains("pub struct ReleaseEscrowAccountData<'a>"));
         assert!(instruction_rs.contains("account_type=Escrow"));
         assert!(instruction_rs.contains("space=128"));
         assert!(account_rs.contains("pub const ACCOUNT_TYPE_DESCRIPTOR: AccountTypeDescriptor"));
@@ -1134,7 +1274,8 @@ programs:
 
         assert!(instruction_rs.contains("InstructionArg"));
         assert!(instruction_rs.contains("InstructionArgValue"));
-        assert!(instruction_rs.contains("validate_program_account_infos_with_pdas_and_args"));
+        assert!(instruction_rs.contains("validate_program_account_infos_with_context"));
+        assert!(instruction_rs.contains("InstructionValidationContext"));
         assert!(instruction_rs.contains(
             "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &CreateVaultArgs)"
         ));
@@ -1143,6 +1284,81 @@ programs:
         ));
         assert!(instruction_rs.contains(
             "InstructionArg { name: \"vault_bump\", value: InstructionArgValue::U8(args.vault_bump) }"
+        ));
+    }
+
+    #[test]
+    fn generates_account_field_runtime_validation() {
+        let yaml = r#"
+specVersion: "0.1.0"
+package:
+  name: "aqami-account-field-example"
+  version: "0.1.0"
+programs:
+  - name: "vault"
+    accounts:
+      - name: "Profile"
+        owner: "program"
+        space: 64
+        fields:
+          - name: "authority"
+            type: "pubkey"
+      - name: "Vault"
+        owner: "program"
+        space: 64
+        fields:
+          - name: "authority"
+            type: "pubkey"
+    pdas:
+      - name: "vault_pda"
+        seeds:
+          - kind: "const"
+            value: "vault"
+          - kind: "account_field"
+            value: "profile.authority"
+        bump:
+          kind: "canonical"
+    instructions:
+      - name: "create_vault"
+        accounts:
+          - name: "authority"
+            role: "signer"
+            isSigner: true
+          - name: "profile"
+            role: "account"
+            accountType: "Profile"
+          - name: "vault"
+            role: "account"
+            accountType: "Vault"
+            isMut: true
+            pda: "vault_pda"
+            constraints:
+              init: true
+              payer: "authority"
+              rentExempt: true
+          - name: "system_program"
+            role: "system_program"
+        args: []
+"#;
+
+        let (_temp_dir, generated) = generate_programs_from_yaml(yaml);
+
+        assert_eq!(generated.len(), 1);
+        let instruction_rs = fs::read_to_string(
+            generated[0]
+                .output_dir
+                .join("src/instructions/create_vault.rs"),
+        )
+        .expect("generated instruction should exist");
+
+        assert!(instruction_rs.contains("validate_program_account_infos_with_context"));
+        assert!(instruction_rs.contains("InstructionAccountPubkeyField"));
+        assert!(instruction_rs.contains("pub struct CreateVaultAccountData<'a>"));
+        assert!(instruction_rs.contains(
+            "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], account_data: &CreateVaultAccountData<'_>)"
+        ));
+        assert!(instruction_rs.contains(
+            "InstructionAccountPubkeyField { account: \"profile\", field: \"authority\", value: account_data.profile.authority }"
         ));
     }
 }
