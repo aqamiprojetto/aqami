@@ -2,7 +2,8 @@
 
 use aqami_runtime::{
     AccountOwner, InstructionAccountConstraintDescriptor, InstructionAccountDescriptor,
-    InstructionAccountRoleDescriptor, validate_program_account_infos,
+    InstructionAccountRoleDescriptor, PdaBumpDescriptor, PdaBumpKindDescriptor, PdaDescriptor,
+    PdaSeedDescriptor, PdaSeedKindDescriptor, validate_program_account_infos_with_pdas,
 };
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
@@ -33,7 +34,7 @@ const ACCOUNT_DESCRIPTORS: &[InstructionAccountDescriptor] = &[
         space: Some(8),
         is_mut: true,
         is_signer: false,
-        pda: None,
+        pda: Some("vault_pda"),
         constraints: Some(InstructionAccountConstraintDescriptor {
             init: false,
             payer: None,
@@ -55,12 +56,36 @@ const ACCOUNT_DESCRIPTORS: &[InstructionAccountDescriptor] = &[
     },
 ];
 
+const PDA_DESCRIPTORS: &[PdaDescriptor] = &[PdaDescriptor {
+    name: "vault_pda",
+    seeds: &[
+        PdaSeedDescriptor {
+            kind: PdaSeedKindDescriptor::Const,
+            value: "vault",
+        },
+        PdaSeedDescriptor {
+            kind: PdaSeedKindDescriptor::AccountKey,
+            value: "authority",
+        },
+    ],
+    bump: Some(PdaBumpDescriptor {
+        kind: PdaBumpKindDescriptor::Canonical,
+        value: None,
+    }),
+}];
+
 fn process_instruction(
     program_id: &Pubkey,
     accounts: &[AccountInfo<'_>],
     _instruction_data: &[u8],
 ) -> ProgramResult {
-    validate_program_account_infos(program_id, ACCOUNT_DESCRIPTORS, accounts).map_err(Into::into)
+    validate_program_account_infos_with_pdas(
+        program_id,
+        ACCOUNT_DESCRIPTORS,
+        accounts,
+        PDA_DESCRIPTORS,
+    )
+    .map_err(Into::into)
 }
 
 fn build_instruction(
@@ -102,7 +127,8 @@ fn test_account(lamports: u64, owner: Pubkey, data_len: usize) -> Account {
 async fn accepts_matching_runtime_account_metas() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
-    let vault = Keypair::new();
+    let (vault, _bump) =
+        Pubkey::find_program_address(&[b"vault", authority.pubkey().as_ref()], &program_id);
 
     let mut program_test = ProgramTest::new(
         "aqami-runtime-test",
@@ -113,13 +139,13 @@ async fn accepts_matching_runtime_account_metas() {
         authority.pubkey(),
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
     );
-    program_test.add_account(vault.pubkey(), test_account(1_000_000_000, program_id, 8));
+    program_test.add_account(vault, test_account(1_000_000_000, program_id, 8));
 
     let context = program_test.start_with_context().await;
     let instruction = build_instruction(
         program_id,
         authority.pubkey(),
-        vault.pubkey(),
+        vault,
         system_program::ID,
         true,
         true,
@@ -142,7 +168,8 @@ async fn accepts_matching_runtime_account_metas() {
 async fn rejects_missing_runtime_signature() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
-    let vault = Keypair::new();
+    let (vault, _bump) =
+        Pubkey::find_program_address(&[b"vault", authority.pubkey().as_ref()], &program_id);
 
     let mut program_test = ProgramTest::new(
         "aqami-runtime-test",
@@ -153,13 +180,13 @@ async fn rejects_missing_runtime_signature() {
         authority.pubkey(),
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
     );
-    program_test.add_account(vault.pubkey(), test_account(1_000_000_000, program_id, 8));
+    program_test.add_account(vault, test_account(1_000_000_000, program_id, 8));
 
     let context = program_test.start_with_context().await;
     let instruction = build_instruction(
         program_id,
         authority.pubkey(),
-        vault.pubkey(),
+        vault,
         system_program::ID,
         true,
         false,
@@ -184,7 +211,8 @@ async fn rejects_missing_runtime_signature() {
 async fn rejects_read_only_close_target() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
-    let vault = Keypair::new();
+    let (vault, _bump) =
+        Pubkey::find_program_address(&[b"vault", authority.pubkey().as_ref()], &program_id);
 
     let mut program_test = ProgramTest::new(
         "aqami-runtime-test",
@@ -195,13 +223,13 @@ async fn rejects_read_only_close_target() {
         authority.pubkey(),
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
     );
-    program_test.add_account(vault.pubkey(), test_account(1_000_000_000, program_id, 8));
+    program_test.add_account(vault, test_account(1_000_000_000, program_id, 8));
 
     let context = program_test.start_with_context().await;
     let instruction = build_instruction(
         program_id,
         authority.pubkey(),
-        vault.pubkey(),
+        vault,
         system_program::ID,
         false,
         true,
@@ -226,7 +254,8 @@ async fn rejects_read_only_close_target() {
 async fn rejects_program_owned_account_with_wrong_owner() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
-    let vault = Keypair::new();
+    let (vault, _bump) =
+        Pubkey::find_program_address(&[b"vault", authority.pubkey().as_ref()], &program_id);
 
     let mut program_test = ProgramTest::new(
         "aqami-runtime-test",
@@ -237,16 +266,13 @@ async fn rejects_program_owned_account_with_wrong_owner() {
         authority.pubkey(),
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
     );
-    program_test.add_account(
-        vault.pubkey(),
-        test_account(1_000_000_000, Pubkey::new_unique(), 8),
-    );
+    program_test.add_account(vault, test_account(1_000_000_000, Pubkey::new_unique(), 8));
 
     let context = program_test.start_with_context().await;
     let instruction = build_instruction(
         program_id,
         authority.pubkey(),
-        vault.pubkey(),
+        vault,
         system_program::ID,
         true,
         true,
@@ -271,7 +297,8 @@ async fn rejects_program_owned_account_with_wrong_owner() {
 async fn rejects_wrong_system_program_account() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
-    let vault = Keypair::new();
+    let (vault, _bump) =
+        Pubkey::find_program_address(&[b"vault", authority.pubkey().as_ref()], &program_id);
     let fake_system_program = Pubkey::new_unique();
 
     let mut program_test = ProgramTest::new(
@@ -283,7 +310,7 @@ async fn rejects_wrong_system_program_account() {
         authority.pubkey(),
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
     );
-    program_test.add_account(vault.pubkey(), test_account(1_000_000_000, program_id, 8));
+    program_test.add_account(vault, test_account(1_000_000_000, program_id, 8));
     program_test.add_account(
         fake_system_program,
         test_account(1_000_000_000, Pubkey::new_unique(), 0),
@@ -293,7 +320,7 @@ async fn rejects_wrong_system_program_account() {
     let instruction = build_instruction(
         program_id,
         authority.pubkey(),
-        vault.pubkey(),
+        vault,
         fake_system_program,
         true,
         true,
@@ -312,4 +339,49 @@ async fn rejects_wrong_system_program_account() {
         .expect_err("wrong system-program address should fail");
 
     assert!(format!("{error:?}").contains("IncorrectProgramId"));
+}
+
+#[tokio::test]
+async fn rejects_incorrect_pda_key() {
+    let program_id = Pubkey::new_unique();
+    let authority = Keypair::new();
+    let wrong_vault = Keypair::new();
+
+    let mut program_test = ProgramTest::new(
+        "aqami-runtime-test",
+        program_id,
+        processor!(process_instruction),
+    );
+    program_test.add_account(
+        authority.pubkey(),
+        test_account(1_000_000_000, Pubkey::new_unique(), 0),
+    );
+    program_test.add_account(
+        wrong_vault.pubkey(),
+        test_account(1_000_000_000, program_id, 8),
+    );
+
+    let context = program_test.start_with_context().await;
+    let instruction = build_instruction(
+        program_id,
+        authority.pubkey(),
+        wrong_vault.pubkey(),
+        system_program::ID,
+        true,
+        true,
+    );
+    let transaction = Transaction::new_signed_with_payer(
+        &[instruction],
+        Some(&context.payer.pubkey()),
+        &[&context.payer, &authority],
+        context.last_blockhash,
+    );
+
+    let error = context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .expect_err("incorrect PDA key should fail");
+
+    assert!(format!("{error:?}").contains("InvalidSeeds"));
 }

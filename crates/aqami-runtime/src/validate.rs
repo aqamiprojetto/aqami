@@ -2,7 +2,10 @@ use solana_program::{account_info::AccountInfo, program_error::ProgramError, pub
 use solana_system_interface::program as system_program;
 use thiserror::Error;
 
-use crate::{AccountOwner, InstructionAccountDescriptor, InstructionAccountRoleDescriptor};
+use crate::{
+    AccountOwner, InstructionAccountDescriptor, InstructionAccountRoleDescriptor,
+    PdaBumpKindDescriptor, PdaDescriptor, PdaSeedKindDescriptor,
+};
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RuntimeValidationError {
@@ -29,6 +32,43 @@ pub enum RuntimeValidationError {
         "runtime account `{account}` uses token-program ownership semantics that AQAMI does not yet validate explicitly"
     )]
     UnsupportedTokenProgramOwnerValidation { account: &'static str },
+    #[error("instruction account `{account}` references unknown PDA descriptor `{pda}`")]
+    UnknownPdaDescriptor {
+        account: &'static str,
+        pda: &'static str,
+    },
+    #[error("PDA `{pda}` for account `{account}` references unknown seed account `{seed_account}`")]
+    UnknownPdaSeedAccount {
+        account: &'static str,
+        pda: &'static str,
+        seed_account: &'static str,
+    },
+    #[error("PDA `{pda}` for account `{account}` uses unsupported seed kind `{kind}`")]
+    UnsupportedPdaSeedKind {
+        account: &'static str,
+        pda: &'static str,
+        kind: &'static str,
+    },
+    #[error("PDA `{pda}` for account `{account}` uses unsupported bump kind `{kind}`")]
+    UnsupportedPdaBumpKind {
+        account: &'static str,
+        pda: &'static str,
+        kind: &'static str,
+    },
+    #[error("PDA `{pda}` for account `{account}` could not be derived for this program")]
+    PdaDerivationFailed {
+        account: &'static str,
+        pda: &'static str,
+    },
+    #[error(
+        "runtime PDA account `{account}` has key `{actual_key}` but expected `{expected_key}` from `{pda}`"
+    )]
+    PdaMismatch {
+        account: &'static str,
+        pda: &'static str,
+        expected_key: Pubkey,
+        actual_key: Pubkey,
+    },
     #[error("initialized account `{account}` must be mutable")]
     InitWithoutMutability { account: &'static str },
     #[error("initialized account `{account}` must declare a payer")]
@@ -257,6 +297,132 @@ pub fn validate_program_account_infos(
     Ok(())
 }
 
+/// Validates program-context account metadata plus currently supported PDA semantics.
+///
+/// This extends `validate_program_account_infos` with PDA derivation checks for
+/// AQAMI's currently resolvable seed and bump forms:
+///
+/// - `const` seeds
+/// - `account_key` seeds
+/// - canonical bumps
+///
+/// AQAMI intentionally returns explicit errors for unresolved PDA features such
+/// as `arg` seeds, `account_field` seeds, and arg-backed bumps until the runtime
+/// exposes the additional execution context required to validate them safely.
+pub fn validate_program_account_infos_with_pdas(
+    program_id: &Pubkey,
+    expected: &[InstructionAccountDescriptor],
+    actual: &[AccountInfo<'_>],
+    pda_descriptors: &[PdaDescriptor],
+) -> Result<(), RuntimeValidationError> {
+    validate_program_account_infos(program_id, expected, actual)?;
+
+    for (descriptor, account_info) in expected.iter().zip(actual.iter()) {
+        let Some(pda_name) = descriptor.pda else {
+            continue;
+        };
+
+        let Some(pda_descriptor) = pda_descriptors
+            .iter()
+            .find(|candidate| candidate.name == pda_name)
+        else {
+            return Err(RuntimeValidationError::UnknownPdaDescriptor {
+                account: descriptor.name,
+                pda: pda_name,
+            });
+        };
+
+        let mut seed_slices = Vec::with_capacity(pda_descriptor.seeds.len());
+        for seed in pda_descriptor.seeds {
+            match seed.kind {
+                PdaSeedKindDescriptor::Const => seed_slices.push(seed.value.as_bytes()),
+                PdaSeedKindDescriptor::AccountKey => {
+                    let Some(seed_account_index) = instruction_account_index(expected, seed.value)
+                    else {
+                        return Err(RuntimeValidationError::UnknownPdaSeedAccount {
+                            account: descriptor.name,
+                            pda: pda_name,
+                            seed_account: seed.value,
+                        });
+                    };
+                    seed_slices.push(actual[seed_account_index].key.as_ref());
+                }
+                PdaSeedKindDescriptor::Arg => {
+                    return Err(RuntimeValidationError::UnsupportedPdaSeedKind {
+                        account: descriptor.name,
+                        pda: pda_name,
+                        kind: pda_seed_kind_name(seed.kind),
+                    });
+                }
+                PdaSeedKindDescriptor::AccountField => {
+                    return Err(RuntimeValidationError::UnsupportedPdaSeedKind {
+                        account: descriptor.name,
+                        pda: pda_name,
+                        kind: pda_seed_kind_name(seed.kind),
+                    });
+                }
+            }
+        }
+
+        let expected_key = match pda_descriptor.bump {
+            None => Pubkey::create_program_address(&seed_slices, program_id).map_err(|_| {
+                RuntimeValidationError::PdaDerivationFailed {
+                    account: descriptor.name,
+                    pda: pda_name,
+                }
+            })?,
+            Some(bump) => match bump.kind {
+                PdaBumpKindDescriptor::Canonical => {
+                    Pubkey::find_program_address(&seed_slices, program_id).0
+                }
+                PdaBumpKindDescriptor::Arg => {
+                    return Err(RuntimeValidationError::UnsupportedPdaBumpKind {
+                        account: descriptor.name,
+                        pda: pda_name,
+                        kind: pda_bump_kind_name(bump.kind),
+                    });
+                }
+            },
+        };
+
+        if account_info.key != &expected_key {
+            return Err(RuntimeValidationError::PdaMismatch {
+                account: descriptor.name,
+                pda: pda_name,
+                expected_key,
+                actual_key: *account_info.key,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn instruction_account_index(
+    expected: &[InstructionAccountDescriptor],
+    account_name: &str,
+) -> Option<usize> {
+    expected
+        .iter()
+        .position(|candidate| candidate.name == account_name)
+}
+
+fn pda_seed_kind_name(kind: PdaSeedKindDescriptor) -> &'static str {
+    match kind {
+        PdaSeedKindDescriptor::Const => "const",
+        PdaSeedKindDescriptor::Arg => "arg",
+        PdaSeedKindDescriptor::AccountField => "account_field",
+        PdaSeedKindDescriptor::AccountKey => "account_key",
+    }
+}
+
+fn pda_bump_kind_name(kind: PdaBumpKindDescriptor) -> &'static str {
+    match kind {
+        PdaBumpKindDescriptor::Canonical => "canonical",
+        PdaBumpKindDescriptor::Arg => "arg",
+    }
+}
+
 impl From<RuntimeValidationError> for ProgramError {
     fn from(error: RuntimeValidationError) -> Self {
         match error {
@@ -270,7 +436,13 @@ impl From<RuntimeValidationError> for ProgramError {
             | RuntimeValidationError::IncorrectSystemProgramAccount { .. } => {
                 ProgramError::IncorrectProgramId
             }
-            RuntimeValidationError::UnsupportedTokenProgramOwnerValidation { .. } => {
+            RuntimeValidationError::PdaDerivationFailed { .. }
+            | RuntimeValidationError::PdaMismatch { .. } => ProgramError::InvalidSeeds,
+            RuntimeValidationError::UnsupportedTokenProgramOwnerValidation { .. }
+            | RuntimeValidationError::UnknownPdaDescriptor { .. }
+            | RuntimeValidationError::UnknownPdaSeedAccount { .. }
+            | RuntimeValidationError::UnsupportedPdaSeedKind { .. }
+            | RuntimeValidationError::UnsupportedPdaBumpKind { .. } => {
                 ProgramError::InvalidArgument
             }
             RuntimeValidationError::AccountNotMutable { .. }
@@ -294,7 +466,8 @@ impl From<RuntimeValidationError> for ProgramError {
 mod tests {
     use crate::{
         AccountOwner, HasOneConstraintDescriptor, InstructionAccountConstraintDescriptor,
-        InstructionAccountDescriptor, InstructionAccountRoleDescriptor,
+        InstructionAccountDescriptor, InstructionAccountRoleDescriptor, PdaBumpDescriptor,
+        PdaBumpKindDescriptor, PdaDescriptor, PdaSeedDescriptor, PdaSeedKindDescriptor,
     };
 
     use super::*;
@@ -496,6 +669,131 @@ mod tests {
                 actual_owner: Pubkey::new_from_array([2; 32]),
             }),
             ProgramError::IncorrectProgramId
+        );
+    }
+
+    #[test]
+    fn maps_pda_mismatch_to_invalid_seeds() {
+        assert_eq!(
+            ProgramError::from(RuntimeValidationError::PdaMismatch {
+                account: "vault",
+                pda: "vault_pda",
+                expected_key: Pubkey::new_from_array([1; 32]),
+                actual_key: Pubkey::new_from_array([2; 32]),
+            }),
+            ProgramError::InvalidSeeds
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_pda_descriptor_reference() {
+        let accounts = [InstructionAccountDescriptor {
+            name: "vault",
+            role: InstructionAccountRoleDescriptor::Account,
+            account_type: Some("Vault"),
+            owner: Some(AccountOwner::Program),
+            space: Some(8),
+            is_mut: true,
+            is_signer: false,
+            pda: Some("vault_pda"),
+            constraints: None,
+        }];
+
+        let key = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mut lamports = 1;
+        let mut data = [0_u8; 8];
+        let actual = [AccountInfo::new(
+            &key,
+            false,
+            true,
+            &mut lamports,
+            &mut data,
+            &owner,
+            false,
+        )];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas(&owner, &accounts, &actual, &[]),
+            Err(RuntimeValidationError::UnknownPdaDescriptor {
+                account: "vault",
+                pda: "vault_pda",
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_arg_seed_kind() {
+        let program_id = Pubkey::new_unique();
+        let authority_key = Pubkey::new_unique();
+        let vault_key = Pubkey::new_unique();
+        let mut authority_lamports = 1;
+        let mut vault_lamports = 1;
+        let mut authority_data = [];
+        let mut vault_data = [0_u8; 8];
+        let accounts = [
+            InstructionAccountDescriptor {
+                name: "authority",
+                role: InstructionAccountRoleDescriptor::Signer,
+                account_type: None,
+                owner: None,
+                space: None,
+                is_mut: true,
+                is_signer: true,
+                pda: None,
+                constraints: None,
+            },
+            InstructionAccountDescriptor {
+                name: "vault",
+                role: InstructionAccountRoleDescriptor::Account,
+                account_type: Some("Vault"),
+                owner: Some(AccountOwner::Program),
+                space: Some(8),
+                is_mut: true,
+                is_signer: false,
+                pda: Some("vault_pda"),
+                constraints: None,
+            },
+        ];
+        let actual = [
+            AccountInfo::new(
+                &authority_key,
+                true,
+                true,
+                &mut authority_lamports,
+                &mut authority_data,
+                &program_id,
+                false,
+            ),
+            AccountInfo::new(
+                &vault_key,
+                false,
+                true,
+                &mut vault_lamports,
+                &mut vault_data,
+                &program_id,
+                false,
+            ),
+        ];
+        let pdas = [PdaDescriptor {
+            name: "vault_pda",
+            seeds: &[PdaSeedDescriptor {
+                kind: PdaSeedKindDescriptor::Arg,
+                value: "authority_bump",
+            }],
+            bump: Some(PdaBumpDescriptor {
+                kind: PdaBumpKindDescriptor::Canonical,
+                value: None,
+            }),
+        }];
+
+        assert_eq!(
+            validate_program_account_infos_with_pdas(&program_id, &accounts, &actual, &pdas),
+            Err(RuntimeValidationError::UnsupportedPdaSeedKind {
+                account: "vault",
+                pda: "vault_pda",
+                kind: "arg",
+            })
         );
     }
 }

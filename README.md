@@ -107,6 +107,7 @@ The current spec layer now also carries:
 Generated Rust skeletons now depend on `aqami-runtime` instead of re-declaring their own local descriptor surface.
 That gives AQAMI its first shared runtime contract between spec normalization, code generation, and generated projects.
 AQAMI now also has its first `solana-program-test` integration harness proving runtime account-meta and owner validation under actual transaction execution.
+AQAMI can now also validate canonical PDAs derived from explicit `const` and `account_key` seed metadata in the same execution harness.
 
 ## Performance Position
 
@@ -217,7 +218,7 @@ The framework should be something a serious team can trust, not a demo that happ
 
 ## Status
 
-As of June 13, 2026, this repository has its first executable foundation:
+As of June 19, 2026, this repository has a stronger executable foundation:
 
 - documentation and agent guidance
 - starter schema and example spec
@@ -227,6 +228,7 @@ As of June 13, 2026, this repository has its first executable foundation:
 - deterministic Rust skeleton generation
 - a first shared runtime crate for account and instruction descriptors
 - a first `solana-program-test` integration test path
+- runtime owner, system-program, and canonical PDA validation helpers
 - CLI `validate`, `inspect`, and `generate` commands
 
-The next most valuable step is to deepen runtime-aware execution behavior further, especially around PDA and account-data constraints, and then expand generated-program testing on top of the new Solana integration harness.
+The next most valuable step is to deepen runtime-aware execution behavior further around unresolved seed sources, account-data constraints, and generated instruction boundaries, and then expand generated-program testing on top of the Solana integration harness.
