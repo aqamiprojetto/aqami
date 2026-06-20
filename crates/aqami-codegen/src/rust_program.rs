@@ -354,9 +354,323 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "use aqami_runtime::{{AccountInfo, RuntimeValidationError, SolanaPubkey}};"
+        "use aqami_runtime::{{AccountInfo, Pubkey, RuntimeValidationError, SolanaPubkey}};"
     )
     .expect("string write should succeed");
+    writeln!(&mut output, "use std::str;").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    for (index, instruction) in program.instructions.iter().enumerate() {
+        writeln!(
+            &mut output,
+            "pub const {}_DISCRIMINANT: u8 = {};",
+            instruction.rust_module_name.to_uppercase(),
+            index
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {} {{",
+        program_instruction_data_enum_name(program)
+    )
+    .expect("string write should succeed");
+    for instruction in &program.instructions {
+        writeln!(
+            &mut output,
+            "    {}({}::{}Args),",
+            instruction_name_prefix(instruction),
+            instruction.rust_module_name,
+            instruction_name_prefix(instruction)
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "impl {} {{",
+        program_instruction_data_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    pub fn discriminant(&self) -> u8 {{")
+        .expect("string write should succeed");
+    writeln!(&mut output, "        match self {{").expect("string write should succeed");
+    for instruction in &program.instructions {
+        writeln!(
+            &mut output,
+            "            Self::{}(_) => {}_DISCRIMINANT,",
+            instruction_name_prefix(instruction),
+            instruction.rust_module_name.to_uppercase()
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "    pub fn name(&self) -> &'static str {{")
+        .expect("string write should succeed");
+    writeln!(&mut output, "        match self {{").expect("string write should succeed");
+    for instruction in &program.instructions {
+        writeln!(
+            &mut output,
+            "            Self::{}(_) => \"{}\",",
+            instruction_name_prefix(instruction),
+            instruction.name
+        )
+        .expect("string write should succeed");
+    }
+    writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "    pub fn encode(&self) -> Vec<u8> {{")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "        let mut output = vec![self.discriminant()];"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "        match self {{").expect("string write should succeed");
+    for instruction in &program.instructions {
+        if instruction.args.is_empty() {
+            writeln!(
+                &mut output,
+                "            Self::{}(_) => {{",
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+        } else {
+            writeln!(
+                &mut output,
+                "            Self::{}(args) => {{",
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+        }
+        for field in &instruction.args {
+            writeln!(
+                &mut output,
+                "                {};",
+                render_instruction_data_encode(field)
+            )
+            .expect("string write should succeed");
+        }
+        writeln!(&mut output, "            }}").expect("string write should succeed");
+    }
+    writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "        output").expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {} {{",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    EmptyInput,").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    UnknownDiscriminant {{ discriminant: u8 }},"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    UnexpectedEof {{ needed: usize, remaining: usize }},"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    UnexpectedTrailingBytes {{ remaining: usize }},"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    InvalidBool {{ value: u8 }},").expect("string write should succeed");
+    writeln!(&mut output, "    InvalidUtf8,").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "struct ByteCursor<'a> {{").expect("string write should succeed");
+    writeln!(&mut output, "    bytes: &'a [u8],").expect("string write should succeed");
+    writeln!(&mut output, "    offset: usize,").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "impl<'a> ByteCursor<'a> {{").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    fn new(bytes: &'a [u8]) -> Self {{ Self {{ bytes, offset: 0 }} }}"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    fn remaining(&self) -> usize {{ self.bytes.len().saturating_sub(self.offset) }}"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    fn read_exact(&mut self, len: usize) -> Result<&'a [u8], {}> {{",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "        if self.remaining() < len {{")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "            return Err({}::UnexpectedEof {{ needed: len, remaining: self.remaining() }});",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "        let start = self.offset;").expect("string write should succeed");
+    writeln!(&mut output, "        self.offset += len;").expect("string write should succeed");
+    writeln!(&mut output, "        Ok(&self.bytes[start..self.offset])")
+        .expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    for helper in instruction_data_codec_helpers(program) {
+        writeln!(&mut output).expect("string write should succeed");
+        writeln!(&mut output, "{helper}").expect("string write should succeed");
+    }
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn decode_instruction_data(input: &[u8]) -> Result<{}, {}> {{",
+        program_instruction_data_enum_name(program),
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let Some((&discriminant, payload)) = input.split_first() else {{"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "        return Err({}::EmptyInput);",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    }};").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let mut cursor = ByteCursor::new(payload);"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    let instruction = match discriminant {{")
+        .expect("string write should succeed");
+    for instruction in &program.instructions {
+        writeln!(
+            &mut output,
+            "        {}_DISCRIMINANT => {{",
+            instruction.rust_module_name.to_uppercase()
+        )
+        .expect("string write should succeed");
+        for field in &instruction.args {
+            writeln!(
+                &mut output,
+                "            let {} = {};",
+                field.rust_field_name,
+                render_instruction_data_decode(field, program)
+            )
+            .expect("string write should succeed");
+        }
+        writeln!(
+            &mut output,
+            "            {}::{}({}::{}Args {{",
+            program_instruction_data_enum_name(program),
+            instruction_name_prefix(instruction),
+            instruction.rust_module_name,
+            instruction_name_prefix(instruction)
+        )
+        .expect("string write should succeed");
+        for field in &instruction.args {
+            writeln!(&mut output, "                {},", field.rust_field_name)
+                .expect("string write should succeed");
+        }
+        writeln!(&mut output, "            }})").expect("string write should succeed");
+        writeln!(&mut output, "        }}").expect("string write should succeed");
+    }
+    writeln!(
+        &mut output,
+        "        _ => return Err({}::UnknownDiscriminant {{ discriminant }}),",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    }};").expect("string write should succeed");
+    writeln!(&mut output, "    if cursor.remaining() != 0 {{")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "        return Err({}::UnexpectedTrailingBytes {{ remaining: cursor.remaining() }});",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "    Ok(instruction)").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {}<'a> {{",
+        program_instruction_account_data_enum_name(program)
+    )
+    .expect("string write should succeed");
+    for instruction in &program.instructions {
+        if instruction_account_data_accounts(instruction, program).is_empty() {
+            writeln!(&mut output, "    {},", instruction_name_prefix(instruction))
+                .expect("string write should succeed");
+        } else {
+            writeln!(
+                &mut output,
+                "    {} {{",
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+            writeln!(
+                &mut output,
+                "        account_data: &'a {}::{}AccountData<'a>,",
+                instruction.rust_module_name,
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+            writeln!(&mut output, "    }},").expect("string write should succeed");
+        }
+    }
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "impl {}<'_> {{",
+        program_instruction_account_data_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    pub fn name(&self) -> &'static str {{")
+        .expect("string write should succeed");
+    writeln!(&mut output, "        match self {{").expect("string write should succeed");
+    for instruction in &program.instructions {
+        if instruction_account_data_accounts(instruction, program).is_empty() {
+            writeln!(
+                &mut output,
+                "            Self::{} => \"{}\",",
+                instruction_name_prefix(instruction),
+                instruction.name
+            )
+            .expect("string write should succeed");
+        } else {
+            writeln!(
+                &mut output,
+                "            Self::{} {{ .. }} => \"{}\",",
+                instruction_name_prefix(instruction),
+                instruction.name
+            )
+            .expect("string write should succeed");
+        }
+    }
+    writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
     writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
         .expect("string write should succeed");
@@ -375,7 +689,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         .expect("string write should succeed");
         writeln!(
             &mut output,
-            "        args: &'a {}::{}Args,",
+            "        args: {}::{}Args,",
             instruction.rust_module_name,
             instruction_name_prefix(instruction)
         )
@@ -412,6 +726,78 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         .expect("string write should succeed");
     }
     writeln!(&mut output, "        }}").expect("string write should succeed");
+    writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
+        .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {} {{",
+        program_bind_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    InstructionAccountDataMismatch {{ instruction: &'static str, account_data: &'static str }},"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn bind_instruction_context<'a>(instruction_data: {}, account_data: {}<'a>) -> Result<{}<'a>, {}> {{",
+        program_instruction_data_enum_name(program),
+        program_instruction_account_data_enum_name(program),
+        program_instruction_enum_name(program),
+        program_bind_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let instruction_name = instruction_data.name();"
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let account_data_name = account_data.name();"
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    match (instruction_data, account_data) {{")
+        .expect("string write should succeed");
+    for instruction in &program.instructions {
+        if instruction_account_data_accounts(instruction, program).is_empty() {
+            writeln!(
+                &mut output,
+                "        ({}::{}(args), {}::{}) => Ok({}::{} {{ args }}),",
+                program_instruction_data_enum_name(program),
+                instruction_name_prefix(instruction),
+                program_instruction_account_data_enum_name(program),
+                instruction_name_prefix(instruction),
+                program_instruction_enum_name(program),
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+        } else {
+            writeln!(
+                &mut output,
+                "        ({}::{}(args), {}::{} {{ account_data }}) => Ok({}::{} {{ args, account_data }}),",
+                program_instruction_data_enum_name(program),
+                instruction_name_prefix(instruction),
+                program_instruction_account_data_enum_name(program),
+                instruction_name_prefix(instruction),
+                program_instruction_enum_name(program),
+                instruction_name_prefix(instruction)
+            )
+            .expect("string write should succeed");
+        }
+    }
+    writeln!(
+        &mut output,
+        "        _ => Err({}::InstructionAccountDataMismatch {{ instruction: instruction_name, account_data: account_data_name }}),",
+        program_bind_error_enum_name(program)
+    )
+    .expect("string write should succeed");
     writeln!(&mut output, "    }}").expect("string write should succeed");
     writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
@@ -456,7 +842,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         writeln!(
             &mut output,
             "    {}(RuntimeValidationError),",
-            instruction_name_prefix(instruction),
+            instruction_name_prefix(instruction)
         )
         .expect("string write should succeed");
     }
@@ -475,32 +861,87 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         if instruction_account_data_accounts(instruction, program).is_empty() {
             writeln!(
                 &mut output,
-                "        {}::{} {{ args }} => {}::prepare_execution(program_id, account_infos, args).map({}::{}).map_err({}::{}),",
+                "        {}::{} {{ args }} => {}::prepare_execution(program_id, account_infos, &args).map({}::{}).map_err({}::{}),",
                 program_instruction_enum_name(program),
                 instruction_name_prefix(instruction),
                 instruction.rust_module_name,
                 program_prepared_instruction_enum_name(program),
                 instruction_name_prefix(instruction),
                 program_dispatch_error_enum_name(program),
-                instruction_name_prefix(instruction),
+                instruction_name_prefix(instruction)
             )
             .expect("string write should succeed");
         } else {
             writeln!(
                 &mut output,
-                "        {}::{} {{ args, account_data }} => {}::prepare_execution(program_id, account_infos, args, account_data).map({}::{}).map_err({}::{}),",
+                "        {}::{} {{ args, account_data }} => {}::prepare_execution(program_id, account_infos, &args, account_data).map({}::{}).map_err({}::{}),",
                 program_instruction_enum_name(program),
                 instruction_name_prefix(instruction),
                 instruction.rust_module_name,
                 program_prepared_instruction_enum_name(program),
                 instruction_name_prefix(instruction),
                 program_dispatch_error_enum_name(program),
-                instruction_name_prefix(instruction),
+                instruction_name_prefix(instruction)
             )
             .expect("string write should succeed");
         }
     }
     writeln!(&mut output, "    }}").expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, PartialEq, Eq)]").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {} {{",
+        program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Decode({}),",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Bind({}),",
+        program_bind_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Dispatch({}),",
+        program_dispatch_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn dispatch_prepare_execution_from_bytes<'a>(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_data: {}<'a>, account_infos: &[AccountInfo<'_>]) -> Result<{}<'a>, {}> {{",
+        program_instruction_account_data_enum_name(program),
+        program_prepared_instruction_enum_name(program),
+        program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let instruction_data = decode_instruction_data(instruction_bytes).map_err({}::Decode)?;",
+        program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let instruction = bind_instruction_context(instruction_data, account_data).map_err({}::Bind)?;",
+        program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    dispatch_prepare_execution(program_id, instruction, account_infos).map_err({}::Dispatch)",
+        program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
     writeln!(&mut output, "}}").expect("string write should succeed");
     output
 }
@@ -1204,6 +1645,119 @@ fn render_runtime_instruction_arg_value(field: &NormalizedField) -> String {
     }
 }
 
+fn render_instruction_data_encode(field: &NormalizedField) -> String {
+    let value = format!("args.{}", field.rust_field_name);
+
+    match field.aqami_type.as_str() {
+        "bool" => format!("output.push(u8::from({value}))"),
+        "u8" => format!("output.push({value})"),
+        "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" => {
+            format!("output.extend_from_slice(&{value}.to_le_bytes())")
+        }
+        "string" => {
+            let bytes_name = format!("{}_bytes", field.rust_field_name);
+            let len_name = format!("{}_len", field.rust_field_name);
+            format!(
+                "let {bytes_name} = {value}.as_bytes(); assert!({bytes_name}.len() <= u32::MAX as usize, \"instruction arg `{}` exceeds u32 length encoding\"); let {len_name} = {bytes_name}.len() as u32; output.extend_from_slice(&{len_name}.to_le_bytes()); output.extend_from_slice({bytes_name})",
+                field.name
+            )
+        }
+        "bytes" => {
+            let bytes_name = format!("{}_bytes", field.rust_field_name);
+            let len_name = format!("{}_len", field.rust_field_name);
+            format!(
+                "let {bytes_name} = {value}.as_slice(); assert!({bytes_name}.len() <= u32::MAX as usize, \"instruction arg `{}` exceeds u32 length encoding\"); let {len_name} = {bytes_name}.len() as u32; output.extend_from_slice(&{len_name}.to_le_bytes()); output.extend_from_slice({bytes_name})",
+                field.name
+            )
+        }
+        "pubkey" => format!("output.extend_from_slice(&{value})"),
+        _ => panic!("unsupported AQAMI arg type: {}", field.aqami_type),
+    }
+}
+
+fn render_instruction_data_decode(field: &NormalizedField, _program: &NormalizedProgram) -> String {
+    match field.aqami_type.as_str() {
+        "bool" => "read_bool(&mut cursor)?".to_string(),
+        "u8" => "read_u8(&mut cursor)?".to_string(),
+        "u16" => "read_u16(&mut cursor)?".to_string(),
+        "u32" => "read_u32(&mut cursor)?".to_string(),
+        "u64" => "read_u64(&mut cursor)?".to_string(),
+        "u128" => "read_u128(&mut cursor)?".to_string(),
+        "i8" => "read_i8(&mut cursor)?".to_string(),
+        "i16" => "read_i16(&mut cursor)?".to_string(),
+        "i32" => "read_i32(&mut cursor)?".to_string(),
+        "i64" => "read_i64(&mut cursor)?".to_string(),
+        "i128" => "read_i128(&mut cursor)?".to_string(),
+        "string" => "read_string(&mut cursor)?".to_string(),
+        "bytes" => "read_bytes(&mut cursor)?".to_string(),
+        "pubkey" => "read_pubkey(&mut cursor)?".to_string(),
+        _ => panic!("unsupported AQAMI arg type: {}", field.aqami_type),
+    }
+}
+
+fn instruction_data_codec_helpers(program: &NormalizedProgram) -> Vec<String> {
+    let mut required_types = BTreeSet::new();
+    for instruction in &program.instructions {
+        for field in &instruction.args {
+            required_types.insert(field.aqami_type.as_str());
+        }
+    }
+
+    let error_name = program_instruction_data_error_enum_name(program);
+    let mut helpers = Vec::new();
+
+    if required_types.contains("bool") {
+        helpers.push(format!(
+            "fn read_bool(cursor: &mut ByteCursor<'_>) -> Result<bool, {error_name}> {{\n    match read_u8(cursor)? {{\n        0 => Ok(false),\n        1 => Ok(true),\n        value => Err({error_name}::InvalidBool {{ value }}),\n    }}\n}}"
+        ));
+    }
+    if required_types.contains("u8") || required_types.contains("bool") {
+        helpers.push(format!(
+            "fn read_u8(cursor: &mut ByteCursor<'_>) -> Result<u8, {error_name}> {{\n    Ok(cursor.read_exact(1)?[0])\n}}"
+        ));
+    }
+    for (aqami_type, rust_type, width) in [
+        ("u16", "u16", 2usize),
+        ("u32", "u32", 4),
+        ("u64", "u64", 8),
+        ("u128", "u128", 16),
+        ("i8", "i8", 1),
+        ("i16", "i16", 2),
+        ("i32", "i32", 4),
+        ("i64", "i64", 8),
+        ("i128", "i128", 16),
+    ] {
+        if !required_types.contains(aqami_type) {
+            continue;
+        }
+        helpers.push(format!(
+            "fn read_{rust_type}(cursor: &mut ByteCursor<'_>) -> Result<{rust_type}, {error_name}> {{\n    let mut bytes = [0u8; {width}];\n    bytes.copy_from_slice(cursor.read_exact({width})?);\n    Ok({rust_type}::from_le_bytes(bytes))\n}}"
+        ));
+    }
+    if required_types.contains("pubkey") {
+        helpers.push(format!(
+            "fn read_pubkey(cursor: &mut ByteCursor<'_>) -> Result<Pubkey, {error_name}> {{\n    let mut bytes = [0u8; 32];\n    bytes.copy_from_slice(cursor.read_exact(32)?);\n    Ok(bytes)\n}}"
+        ));
+    }
+    if required_types.contains("bytes") || required_types.contains("string") {
+        if !required_types.contains("u32") {
+            helpers.push(format!(
+                "fn read_u32(cursor: &mut ByteCursor<'_>) -> Result<u32, {error_name}> {{\n    let mut bytes = [0u8; 4];\n    bytes.copy_from_slice(cursor.read_exact(4)?);\n    Ok(u32::from_le_bytes(bytes))\n}}"
+            ));
+        }
+        helpers.push(format!(
+            "fn read_bytes(cursor: &mut ByteCursor<'_>) -> Result<Vec<u8>, {error_name}> {{\n    let len = read_u32(cursor)? as usize;\n    Ok(cursor.read_exact(len)?.to_vec())\n}}"
+        ));
+    }
+    if required_types.contains("string") {
+        helpers.push(format!(
+            "fn read_string(cursor: &mut ByteCursor<'_>) -> Result<String, {error_name}> {{\n    let bytes = read_bytes(cursor)?;\n    str::from_utf8(&bytes)\n        .map(str::to_owned)\n        .map_err(|_| {error_name}::InvalidUtf8)\n}}"
+        ));
+    }
+
+    helpers
+}
+
 fn push_doc_comment(output: &mut String, indent: usize, docs: Option<&str>) {
     let Some(docs) = docs else {
         return;
@@ -1276,12 +1830,32 @@ fn program_instruction_enum_name(program: &NormalizedProgram) -> String {
     format!("{}Instruction", program_name_prefix(program))
 }
 
+fn program_instruction_data_enum_name(program: &NormalizedProgram) -> String {
+    format!("{}InstructionData", program_name_prefix(program))
+}
+
+fn program_instruction_data_error_enum_name(program: &NormalizedProgram) -> String {
+    format!("{}InstructionDataError", program_name_prefix(program))
+}
+
+fn program_instruction_account_data_enum_name(program: &NormalizedProgram) -> String {
+    format!("{}InstructionAccountData", program_name_prefix(program))
+}
+
+fn program_bind_error_enum_name(program: &NormalizedProgram) -> String {
+    format!("{}BindError", program_name_prefix(program))
+}
+
 fn program_prepared_instruction_enum_name(program: &NormalizedProgram) -> String {
     format!("{}PreparedInstruction", program_name_prefix(program))
 }
 
 fn program_dispatch_error_enum_name(program: &NormalizedProgram) -> String {
     format!("{}DispatchError", program_name_prefix(program))
+}
+
+fn program_dispatch_from_bytes_error_enum_name(program: &NormalizedProgram) -> String {
+    format!("{}DispatchFromBytesError", program_name_prefix(program))
 }
 
 fn seed_kind_name(kind: &SeedKind) -> &'static str {
@@ -1525,7 +2099,8 @@ mod tests {
         r#"#![allow(deprecated)]
 
 use escrow::instructions::{
-    dispatch_prepare_execution, EscrowDispatchError, EscrowInstruction, EscrowPreparedInstruction,
+    dispatch_prepare_execution_from_bytes, EscrowDispatchError, EscrowDispatchFromBytesError,
+    EscrowInstructionAccountData, EscrowInstructionData, EscrowPreparedInstruction,
     release_escrow::{ReleaseEscrowAccountData, ReleaseEscrowArgs},
 };
 use escrow::state::escrow::Escrow;
@@ -1542,35 +2117,35 @@ fn process_instruction(
     accounts: &[AccountInfo<'_>],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    let mismatched_beneficiary = instruction_data.first() == Some(&1);
     let escrow_state = Escrow {
         depositor: accounts[0].key.to_bytes(),
-        beneficiary: if mismatched_beneficiary {
-            Pubkey::new_unique().to_bytes()
-        } else {
-            accounts[1].key.to_bytes()
-        },
+        beneficiary: accounts[1].key.to_bytes(),
         amount: 42,
         status: 0,
     };
     let account_data = ReleaseEscrowAccountData {
         escrow: &escrow_state,
     };
-    let prepared = dispatch_prepare_execution(
+    let prepared = dispatch_prepare_execution_from_bytes(
         program_id,
-        EscrowInstruction::ReleaseEscrow {
-            args: &ReleaseEscrowArgs {},
+        instruction_data,
+        EscrowInstructionAccountData::ReleaseEscrow {
             account_data: &account_data,
         },
         accounts,
     )
     .map_err(|error| match error {
-        EscrowDispatchError::ReleaseEscrow(inner) => {
-            solana_program::program_error::ProgramError::from(inner)
+        EscrowDispatchFromBytesError::Decode(_) | EscrowDispatchFromBytesError::Bind(_) => {
+            solana_program::program_error::ProgramError::InvalidInstructionData
         }
-        EscrowDispatchError::CreateEscrow(inner) => {
-            solana_program::program_error::ProgramError::from(inner)
-        }
+        EscrowDispatchFromBytesError::Dispatch(inner) => match inner {
+            EscrowDispatchError::ReleaseEscrow(inner) => {
+                solana_program::program_error::ProgramError::from(inner)
+            }
+            EscrowDispatchError::CreateEscrow(inner) => {
+                solana_program::program_error::ProgramError::from(inner)
+            }
+        },
     })?;
     match prepared {
         EscrowPreparedInstruction::ReleaseEscrow(prepared) => {
@@ -1640,7 +2215,7 @@ async fn generated_prepare_execution_accepts_matching_runtime_inputs() {
         depositor.pubkey(),
         beneficiary.pubkey(),
         escrow,
-        vec![0],
+        EscrowInstructionData::ReleaseEscrow(ReleaseEscrowArgs {}).encode(),
     );
     let transaction = Transaction::new_signed_with_payer(
         &[instruction],
@@ -1657,7 +2232,7 @@ async fn generated_prepare_execution_accepts_matching_runtime_inputs() {
 }
 
 #[tokio::test]
-async fn generated_prepare_execution_rejects_has_one_mismatch() {
+async fn generated_prepare_execution_rejects_malformed_instruction_bytes() {
     let program_id = Pubkey::new_unique();
     let depositor = Keypair::new();
     let beneficiary = Keypair::new();
@@ -1678,12 +2253,15 @@ async fn generated_prepare_execution_rejects_has_one_mismatch() {
     program_test.add_account(escrow, test_account(1_000_000_000, program_id, 128));
 
     let context = program_test.start_with_context().await;
+    let mut malformed_instruction_data =
+        EscrowInstructionData::ReleaseEscrow(ReleaseEscrowArgs {}).encode();
+    malformed_instruction_data.push(0);
     let instruction = build_instruction(
         program_id,
         depositor.pubkey(),
         beneficiary.pubkey(),
         escrow,
-        vec![1],
+        malformed_instruction_data,
     );
     let transaction = Transaction::new_signed_with_payer(
         &[instruction],
@@ -1696,9 +2274,9 @@ async fn generated_prepare_execution_rejects_has_one_mismatch() {
         .banks_client
         .process_transaction(transaction)
         .await
-        .expect_err("mismatched generated has_one inputs should fail");
+        .expect_err("malformed generated instruction bytes should fail");
 
-    assert!(format!("{error:?}").contains("InvalidAccountData"));
+    assert!(format!("{error:?}").contains("InvalidInstructionData"));
 }
 "#
     }
@@ -1806,10 +2384,16 @@ async fn generated_prepare_execution_rejects_has_one_mismatch() {
         assert!(instruction_rs.contains("pub struct CreateEscrowPreparedExecution"));
         assert!(instruction_rs.contains("pub fn prepare_execution"));
         assert!(instruction_rs.contains("pub fn execute_with_runtime_validation("));
+        assert!(instructions_mod_rs.contains("pub enum EscrowInstructionData"));
+        assert!(instructions_mod_rs.contains("pub fn decode_instruction_data(input: &[u8])"));
+        assert!(instructions_mod_rs.contains("pub enum EscrowInstructionAccountData<'a>"));
+        assert!(instructions_mod_rs.contains("pub fn bind_instruction_context<'a>("));
         assert!(instructions_mod_rs.contains("pub enum EscrowInstruction<'a>"));
         assert!(instructions_mod_rs.contains("pub enum EscrowPreparedInstruction<'a>"));
         assert!(instructions_mod_rs.contains("pub enum EscrowDispatchError"));
         assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution<'a>("));
+        assert!(instructions_mod_rs.contains("pub enum EscrowDispatchFromBytesError"));
+        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution_from_bytes<'a>("));
         assert!(instructions_mod_rs.contains("pub fn name(&self) -> &'static str"));
         assert!(instruction_rs.contains("pub fn validate_account_descriptors()"));
         assert!(release_instruction_rs.contains("validate_program_account_infos_with_context"));
