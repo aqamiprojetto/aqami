@@ -68,6 +68,8 @@ The framework is expected to grow into a Rust workspace with clear component bou
 - `aqami-mcp`: official MCP server for AI agent interaction
 - `examples/*`: reference projects and spec fixtures
 
+Once AQAMI is mature enough for real external users, those framework crates should also become stable published Rust crates with intentional semver and crates.io distribution rather than remaining only workspace-local development artifacts.
+
 The intended dependency direction is:
 
 ```text
@@ -113,6 +115,7 @@ AQAMI can now also validate arg-backed PDA seeds and bumps through explicit type
 AQAMI can now also validate `account_field` PDA seeds and `hasOne` account relationships through explicit typed pubkey-field context supplied by generated instruction entrypoints.
 Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly, including typed arg wiring for arg-backed PDAs and explicit typed account-data wiring for pubkey field checks.
 Generated instruction modules now also expose execution-preparation helpers that validate runtime inputs, collect explicit account-key views, and carry typed readable state inputs into program logic without hidden decoding conventions.
+Generated `instructions/mod.rs` surfaces now also expose a typed dispatch-preparation contract that routes instruction variants into the correct prepared execution boundary without inventing a raw byte wire format yet.
 
 ## Performance Position
 

@@ -75,6 +75,7 @@ Today AQAMI includes:
 - arg-backed PDA seed and bump validation through typed runtime instruction arguments
 - `account_field` PDA seed validation through explicit typed pubkey-field runtime context
 - runtime `hasOne` validation through explicit typed pubkey-field runtime context
+- typed generated dispatch preparation on top of per-instruction execution-preparation helpers
 
 The main implementation crates are:
 
@@ -101,6 +102,7 @@ Right now, AQAMI can:
 - generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
 - generate explicit execution-preparation boundaries that validate runtime inputs and produce named account-key views plus typed readable state inputs
 - prove that generated execution-preparation boundary in a generated-program `solana-program-test` harness
+- generate a typed dispatch-preparation contract that routes instruction variants into the correct prepared execution boundary
 
 ### What AQAMI Cannot Do Yet
 
@@ -160,6 +162,7 @@ The implementation history has followed this sequence:
 14. arg-backed PDA runtime validation through typed instruction arguments
 15. explicit typed-context validation for `account_field` PDA seeds and runtime `hasOne`
 16. generated execution-preparation boundaries with generated-program runtime tests
+17. generated typed dispatch-preparation contract
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.
@@ -208,6 +211,15 @@ Only after spec, runtime, and codegen are stable enough:
 
 - generate client SDKs
 - add MCP on top of the stable CLI/spec/runtime capabilities
+
+### Phase 6: Public Release Surface
+
+Once AQAMI is mature enough that real external teams can rely on it:
+
+- lock down stable public crate boundaries
+- adopt intentional external semver discipline for those crate APIs
+- publish the AQAMI crates as real Rust libraries on crates.io
+- document upgrade and compatibility expectations for public users
 
 ## Current Recommended Priorities
 

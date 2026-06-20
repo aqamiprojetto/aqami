@@ -117,6 +117,7 @@ Today the architecture is partially implemented:
 - `aqami-runtime` exists and provides shared descriptors plus runtime validation helpers
 - `aqami-cli` exists and exposes `validate`, `inspect`, and `generate`
 - generated instruction modules now expose explicit runtime validation and execution-preparation boundaries
+- generated instruction modules now also expose a typed dispatch-preparation contract in `instructions/mod.rs`
 - `aqami-mcp` is still intentionally deferred until the spec, runtime, and CLI surfaces stabilize further
 
 That means AQAMI is no longer only an architecture sketch.
@@ -246,6 +247,12 @@ Recommended approach:
 - explicit `specVersion` in every project spec
 - semver for framework crates
 - migration helpers for spec upgrades once the model stabilizes
+
+Once AQAMI reaches external-user readiness, that versioning strategy should also become a publishing strategy:
+
+- stable public crate boundaries
+- semver communicated to external users
+- crates.io publication for the AQAMI framework crates that are meant to be consumed directly
 
 ## Architectural Risks To Avoid
 
