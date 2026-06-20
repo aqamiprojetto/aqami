@@ -34,7 +34,7 @@ pub struct ReleaseEscrowAccounts {
     /// role=account, mut
     pub beneficiary: Pubkey,
     /// role=account, account_type=Escrow, owner=program, space=128, mut, pda=escrow_pda, close_to=depositor, has_one=depositor->depositor, has_one=beneficiary->beneficiary
-    pub escrow: Escrow,
+    pub escrow: Pubkey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +46,49 @@ pub struct ReleaseEscrowAccountData<'a> {
     pub escrow: &'a Escrow,
 }
 
-pub fn execute(_accounts: &mut ReleaseEscrowAccounts, _args: ReleaseEscrowArgs) -> Result<(), ProgramError> {
+/// Resolves named account keys from `AccountInfo` in AQAMI descriptor order.
+pub fn accounts_from_account_infos(account_infos: &[AccountInfo<'_>]) -> Result<ReleaseEscrowAccounts, RuntimeValidationError> {
+    if account_infos.len() != ACCOUNT_DESCRIPTORS.len() {
+        return Err(RuntimeValidationError::AccountCountMismatch { expected: ACCOUNT_DESCRIPTORS.len(), actual: account_infos.len() });
+    }
+    Ok(ReleaseEscrowAccounts {
+        depositor: account_infos[0].key.to_bytes(),
+        beneficiary: account_infos[1].key.to_bytes(),
+        escrow: account_infos[2].key.to_bytes(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseEscrowPreparedExecution<'a> {
+    pub accounts: ReleaseEscrowAccounts,
+    pub args: ReleaseEscrowArgs,
+    pub account_data: &'a ReleaseEscrowAccountData<'a>,
+}
+
+/// Validates runtime inputs and prepares explicit AQAMI execution values.
+pub fn prepare_execution<'a>(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &ReleaseEscrowArgs, account_data: &'a ReleaseEscrowAccountData<'a>) -> Result<ReleaseEscrowPreparedExecution<'a>, RuntimeValidationError> {
+    validate_runtime_accounts(program_id, account_infos, account_data)?;
+    Ok(ReleaseEscrowPreparedExecution {
+        accounts: accounts_from_account_infos(account_infos)?,
+        args: args.clone(),
+        account_data,
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReleaseEscrowExecutionError {
+    RuntimeValidation(RuntimeValidationError),
+    Program(ProgramError),
+}
+
+/// Validates runtime inputs, prepares execution values, and calls the instruction hook.
+pub fn execute_with_runtime_validation(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &ReleaseEscrowArgs, account_data: &ReleaseEscrowAccountData<'_>) -> Result<(), ReleaseEscrowExecutionError> {
+    let mut prepared = prepare_execution(program_id, account_infos, args, account_data)
+        .map_err(ReleaseEscrowExecutionError::RuntimeValidation)?;
+    execute(&mut prepared.accounts, prepared.args, prepared.account_data)
+        .map_err(ReleaseEscrowExecutionError::Program)
+}
+
+pub fn execute(_accounts: &mut ReleaseEscrowAccounts, _args: ReleaseEscrowArgs, _account_data: &ReleaseEscrowAccountData<'_>) -> Result<(), ProgramError> {
     todo!("Implement release_escrow")
 }

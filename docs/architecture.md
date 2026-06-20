@@ -116,6 +116,7 @@ Today the architecture is partially implemented:
 - `aqami-codegen` exists and generates deterministic Rust program skeletons
 - `aqami-runtime` exists and provides shared descriptors plus runtime validation helpers
 - `aqami-cli` exists and exposes `validate`, `inspect`, and `generate`
+- generated instruction modules now expose explicit runtime validation and execution-preparation boundaries
 - `aqami-mcp` is still intentionally deferred until the spec, runtime, and CLI surfaces stabilize further
 
 That means AQAMI is no longer only an architecture sketch.
@@ -269,7 +270,7 @@ The architecture has already crossed these checkpoints:
 
 The next architecture-bearing steps are:
 
-- deepen generated execution boundaries beyond validation-only stubs
+- define an explicit instruction-data and dispatch contract on top of the current preparation boundary
 - expand runtime helpers without introducing hidden serialization or decoding conventions
 - broaden end-to-end generated-program testing
 - add client and MCP surfaces only on top of those stabilized foundations

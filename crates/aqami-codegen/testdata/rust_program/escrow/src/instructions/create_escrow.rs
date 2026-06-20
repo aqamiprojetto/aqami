@@ -1,6 +1,5 @@
 use crate::errors::ProgramError;
 use aqami_runtime::{AccountInfo, InstructionAccountDescriptor, InstructionAccountRoleDescriptor, Pubkey, RuntimeValidationError, SolanaPubkey, validate_instruction_accounts, AccountOwner, InstructionAccountConstraintDescriptor, PdaDescriptor, validate_program_account_infos_with_pdas};
-use crate::state::escrow::Escrow;
 use crate::pdas::{ESCROW_PDA_DESCRIPTOR};
 
 pub const ACCOUNT_DESCRIPTORS: &[InstructionAccountDescriptor] = &[
@@ -31,7 +30,7 @@ pub struct CreateEscrowAccounts {
     /// role=account
     pub beneficiary: Pubkey,
     /// role=account, account_type=Escrow, owner=program, space=128, mut, pda=escrow_pda, init, payer=depositor, rent_exempt
-    pub escrow: Escrow,
+    pub escrow: Pubkey,
     /// role=system_program
     pub system_program: Pubkey,
 }
@@ -41,6 +40,48 @@ pub struct CreateEscrowArgs {
     pub depositor: Pubkey,
     pub beneficiary: Pubkey,
     pub amount: u64,
+}
+
+/// Resolves named account keys from `AccountInfo` in AQAMI descriptor order.
+pub fn accounts_from_account_infos(account_infos: &[AccountInfo<'_>]) -> Result<CreateEscrowAccounts, RuntimeValidationError> {
+    if account_infos.len() != ACCOUNT_DESCRIPTORS.len() {
+        return Err(RuntimeValidationError::AccountCountMismatch { expected: ACCOUNT_DESCRIPTORS.len(), actual: account_infos.len() });
+    }
+    Ok(CreateEscrowAccounts {
+        depositor: account_infos[0].key.to_bytes(),
+        beneficiary: account_infos[1].key.to_bytes(),
+        escrow: account_infos[2].key.to_bytes(),
+        system_program: account_infos[3].key.to_bytes(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateEscrowPreparedExecution {
+    pub accounts: CreateEscrowAccounts,
+    pub args: CreateEscrowArgs,
+}
+
+/// Validates runtime inputs and prepares explicit AQAMI execution values.
+pub fn prepare_execution(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &CreateEscrowArgs) -> Result<CreateEscrowPreparedExecution, RuntimeValidationError> {
+    validate_runtime_accounts(program_id, account_infos)?;
+    Ok(CreateEscrowPreparedExecution {
+        accounts: accounts_from_account_infos(account_infos)?,
+        args: args.clone(),
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CreateEscrowExecutionError {
+    RuntimeValidation(RuntimeValidationError),
+    Program(ProgramError),
+}
+
+/// Validates runtime inputs, prepares execution values, and calls the instruction hook.
+pub fn execute_with_runtime_validation(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &CreateEscrowArgs) -> Result<(), CreateEscrowExecutionError> {
+    let mut prepared = prepare_execution(program_id, account_infos, args)
+        .map_err(CreateEscrowExecutionError::RuntimeValidation)?;
+    execute(&mut prepared.accounts, prepared.args)
+        .map_err(CreateEscrowExecutionError::Program)
 }
 
 pub fn execute(_accounts: &mut CreateEscrowAccounts, _args: CreateEscrowArgs) -> Result<(), ProgramError> {

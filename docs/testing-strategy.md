@@ -120,5 +120,6 @@ AQAMI CI should exercise the same explicit framework surfaces the architecture e
 - CLI validation of the reference spec fixture
 - CLI inspection of the normalized model
 - end-to-end generation of the reference Rust program followed by a compile check
+- generated-program runtime-boundary coverage through `solana-program-test`
 
 That baseline keeps the spec model, CLI, generator, and runtime contract connected in one repeatable verification path instead of testing each layer in isolation only.

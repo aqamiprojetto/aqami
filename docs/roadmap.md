@@ -99,12 +99,15 @@ Right now, AQAMI can:
 - validate arg-backed PDA seeds and bumps when typed runtime instruction arguments are supplied explicitly
 - validate `account_field` PDA seeds and `hasOne` relationships when typed pubkey field context is supplied explicitly
 - generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
+- generate explicit execution-preparation boundaries that validate runtime inputs and produce named account-key views plus typed readable state inputs
+- prove that generated execution-preparation boundary in a generated-program `solana-program-test` harness
 
 ### What AQAMI Cannot Do Yet
 
 Right now, AQAMI does not yet provide:
 
-- generated execution wiring beyond descriptor-level validation
+- generic instruction-data decoding or dispatch
+- automatic account-state deserialization from raw bytes
 - real CPI helpers
 - client SDK generation
 - compatibility layers with existing Solana frameworks
@@ -156,6 +159,7 @@ The implementation history has followed this sequence:
 13. generated instruction-level runtime validation entrypoints
 14. arg-backed PDA runtime validation through typed instruction arguments
 15. explicit typed-context validation for `account_field` PDA seeds and runtime `hasOne`
+16. generated execution-preparation boundaries with generated-program runtime tests
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.
@@ -186,18 +190,12 @@ It should continue growing into:
 ### Phase 3: Runtime-Aware Generation
 
 This phase has started.
-Next, AQAMI code generation should move from:
-
-- minimal skeletons
-
-to:
-
-- generated code that uses runtime descriptors and helper APIs more deeply
-- generated execution boundaries that call runtime validation in real instruction flow
+AQAMI code generation has now moved beyond minimal skeletons into explicit runtime validation and execution preparation.
+The next step inside this phase is to define an explicit instruction-data and dispatch contract on top of that boundary.
 
 ### Phase 4: Testing Depth
 
-After runtime-aware generation:
+After runtime-aware generation deepens further:
 
 - add golden generation fixtures
 - expand integration coverage

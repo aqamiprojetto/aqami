@@ -112,6 +112,7 @@ AQAMI can now also validate canonical PDAs derived from explicit `const` and `ac
 AQAMI can now also validate arg-backed PDA seeds and bumps through explicit typed runtime argument context instead of opaque byte-packing conventions.
 AQAMI can now also validate `account_field` PDA seeds and `hasOne` account relationships through explicit typed pubkey-field context supplied by generated instruction entrypoints.
 Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly, including typed arg wiring for arg-backed PDAs and explicit typed account-data wiring for pubkey field checks.
+Generated instruction modules now also expose execution-preparation helpers that validate runtime inputs, collect explicit account-key views, and carry typed readable state inputs into program logic without hidden decoding conventions.
 
 ## Performance Position
 
@@ -235,6 +236,8 @@ As of June 19, 2026, this repository has a stronger executable foundation:
 - a first `solana-program-test` integration test path
 - runtime owner, system-program, canonical PDA, arg-backed PDA, `account_field` PDA, and `hasOne` validation helpers
 - generated instruction-level runtime validation entrypoints with typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
+- generated execution-preparation boundaries that turn `AccountInfo` plus typed AQAMI inputs into explicit execution values
+- generated-program `solana-program-test` coverage for the execution-preparation boundary
 - CLI `validate`, `inspect`, and `generate` commands
 
-The next most valuable step is to deepen generated execution behavior beyond validation entrypoints, broaden more account-layout-aware runtime contracts without introducing hidden decoding conventions, and expand generated-program testing on top of the Solana integration harness.
+The next most valuable step is to define an explicit instruction-data and dispatch contract, continue broadening runtime-aware generated flows without hidden account-byte decoding, and then build client and MCP surfaces on top of that stabilized execution model.
