@@ -109,15 +109,15 @@ pub fn decode_instruction_data(input: &[u8]) -> Result<EscrowInstructionData, Es
     Ok(instruction)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EscrowInstructionAccountData<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EscrowInstructionAccountData {
     CreateEscrow,
     ReleaseEscrow {
-        account_data: &'a release_escrow::ReleaseEscrowAccountData<'a>,
+        account_data: release_escrow::ReleaseEscrowAccountData,
     },
 }
 
-impl EscrowInstructionAccountData<'_> {
+impl EscrowInstructionAccountData {
     pub fn name(&self) -> &'static str {
         match self {
             Self::CreateEscrow => "create_escrow",
@@ -127,17 +127,17 @@ impl EscrowInstructionAccountData<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EscrowInstruction<'a> {
+pub enum EscrowInstruction {
     CreateEscrow {
         args: create_escrow::CreateEscrowArgs,
     },
     ReleaseEscrow {
         args: release_escrow::ReleaseEscrowArgs,
-        account_data: &'a release_escrow::ReleaseEscrowAccountData<'a>,
+        account_data: release_escrow::ReleaseEscrowAccountData,
     },
 }
 
-impl EscrowInstruction<'_> {
+impl EscrowInstruction {
     pub fn name(&self) -> &'static str {
         match self {
             Self::CreateEscrow { .. } => "create_escrow",
@@ -151,7 +151,7 @@ pub enum EscrowBindError {
     InstructionAccountDataMismatch { instruction: &'static str, account_data: &'static str },
 }
 
-pub fn bind_instruction_context<'a>(instruction_data: EscrowInstructionData, account_data: EscrowInstructionAccountData<'a>) -> Result<EscrowInstruction<'a>, EscrowBindError> {
+pub fn bind_instruction_context(instruction_data: EscrowInstructionData, account_data: EscrowInstructionAccountData) -> Result<EscrowInstruction, EscrowBindError> {
     let instruction_name = instruction_data.name();
     let account_data_name = account_data.name();
     match (instruction_data, account_data) {
@@ -162,9 +162,9 @@ pub fn bind_instruction_context<'a>(instruction_data: EscrowInstructionData, acc
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum EscrowPreparedInstruction<'a> {
+pub enum EscrowPreparedInstruction {
     CreateEscrow(create_escrow::CreateEscrowPreparedExecution),
-    ReleaseEscrow(release_escrow::ReleaseEscrowPreparedExecution<'a>),
+    ReleaseEscrow(release_escrow::ReleaseEscrowPreparedExecution),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -173,7 +173,7 @@ pub enum EscrowDispatchError {
     ReleaseEscrow(RuntimeValidationError),
 }
 
-pub fn dispatch_prepare_execution<'a>(program_id: &SolanaPubkey, instruction: EscrowInstruction<'a>, account_infos: &[AccountInfo<'_>]) -> Result<EscrowPreparedInstruction<'a>, EscrowDispatchError> {
+pub fn dispatch_prepare_execution(program_id: &SolanaPubkey, instruction: EscrowInstruction, account_infos: &[AccountInfo<'_>]) -> Result<EscrowPreparedInstruction, EscrowDispatchError> {
     match instruction {
         EscrowInstruction::CreateEscrow { args } => create_escrow::prepare_execution(program_id, account_infos, &args).map(EscrowPreparedInstruction::CreateEscrow).map_err(EscrowDispatchError::CreateEscrow),
         EscrowInstruction::ReleaseEscrow { args, account_data } => release_escrow::prepare_execution(program_id, account_infos, &args, account_data).map(EscrowPreparedInstruction::ReleaseEscrow).map_err(EscrowDispatchError::ReleaseEscrow),
@@ -187,8 +187,25 @@ pub enum EscrowDispatchFromBytesError {
     Dispatch(EscrowDispatchError),
 }
 
-pub fn dispatch_prepare_execution_from_bytes<'a>(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_data: EscrowInstructionAccountData<'a>, account_infos: &[AccountInfo<'_>]) -> Result<EscrowPreparedInstruction<'a>, EscrowDispatchFromBytesError> {
+pub fn dispatch_prepare_execution_from_bytes(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_data: EscrowInstructionAccountData, account_infos: &[AccountInfo<'_>]) -> Result<EscrowPreparedInstruction, EscrowDispatchFromBytesError> {
     let instruction_data = decode_instruction_data(instruction_bytes).map_err(EscrowDispatchFromBytesError::Decode)?;
     let instruction = bind_instruction_context(instruction_data, account_data).map_err(EscrowDispatchFromBytesError::Bind)?;
     dispatch_prepare_execution(program_id, instruction, account_infos).map_err(EscrowDispatchFromBytesError::Dispatch)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum EscrowDispatchFromBytesWithResolverError<ResolveError> {
+    Decode(EscrowInstructionDataError),
+    Resolve(ResolveError),
+    Bind(EscrowBindError),
+    Dispatch(EscrowDispatchError),
+}
+
+pub fn dispatch_prepare_execution_from_bytes_with_resolver<ResolveError, ResolveAccountData>(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_infos: &[AccountInfo<'_>], resolve_account_data: ResolveAccountData) -> Result<EscrowPreparedInstruction, EscrowDispatchFromBytesWithResolverError<ResolveError>>
+where ResolveAccountData: FnOnce(&EscrowInstructionData) -> Result<EscrowInstructionAccountData, ResolveError>,
+{
+    let instruction_data = decode_instruction_data(instruction_bytes).map_err(EscrowDispatchFromBytesWithResolverError::Decode)?;
+    let account_data = resolve_account_data(&instruction_data).map_err(EscrowDispatchFromBytesWithResolverError::Resolve)?;
+    let instruction = bind_instruction_context(instruction_data, account_data).map_err(EscrowDispatchFromBytesWithResolverError::Bind)?;
+    dispatch_prepare_execution(program_id, instruction, account_infos).map_err(EscrowDispatchFromBytesWithResolverError::Dispatch)
 }

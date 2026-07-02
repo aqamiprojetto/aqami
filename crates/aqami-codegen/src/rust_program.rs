@@ -609,11 +609,11 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output, "    Ok(instruction)").expect("string write should succeed");
     writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
-    writeln!(&mut output, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]")
+    writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
         .expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub enum {}<'a> {{",
+        "pub enum {} {{",
         program_instruction_account_data_enum_name(program)
     )
     .expect("string write should succeed");
@@ -630,7 +630,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
             .expect("string write should succeed");
             writeln!(
                 &mut output,
-                "        account_data: &'a {}::{}AccountData<'a>,",
+                "        account_data: {}::{}AccountData,",
                 instruction.rust_module_name,
                 instruction_name_prefix(instruction)
             )
@@ -642,7 +642,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "impl {}<'_> {{",
+        "impl {} {{",
         program_instruction_account_data_enum_name(program)
     )
     .expect("string write should succeed");
@@ -676,7 +676,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         .expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub enum {}<'a> {{",
+        "pub enum {} {{",
         program_instruction_enum_name(program)
     )
     .expect("string write should succeed");
@@ -697,7 +697,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         if !instruction_account_data_accounts(instruction, program).is_empty() {
             writeln!(
                 &mut output,
-                "        account_data: &'a {}::{}AccountData<'a>,",
+                "        account_data: {}::{}AccountData,",
                 instruction.rust_module_name,
                 instruction_name_prefix(instruction)
             )
@@ -709,7 +709,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "impl {}<'_> {{",
+        "impl {} {{",
         program_instruction_enum_name(program)
     )
     .expect("string write should succeed");
@@ -746,7 +746,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn bind_instruction_context<'a>(instruction_data: {}, account_data: {}<'a>) -> Result<{}<'a>, {}> {{",
+        "pub fn bind_instruction_context(instruction_data: {}, account_data: {}) -> Result<{}, {}> {{",
         program_instruction_data_enum_name(program),
         program_instruction_account_data_enum_name(program),
         program_instruction_enum_name(program),
@@ -804,30 +804,19 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output, "#[derive(Debug, PartialEq, Eq)]").expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub enum {}<'a> {{",
+        "pub enum {} {{",
         program_prepared_instruction_enum_name(program)
     )
     .expect("string write should succeed");
     for instruction in &program.instructions {
-        if instruction_account_data_accounts(instruction, program).is_empty() {
-            writeln!(
-                &mut output,
-                "    {}({}::{}PreparedExecution),",
-                instruction_name_prefix(instruction),
-                instruction.rust_module_name,
-                instruction_name_prefix(instruction)
-            )
-            .expect("string write should succeed");
-        } else {
-            writeln!(
-                &mut output,
-                "    {}({}::{}PreparedExecution<'a>),",
-                instruction_name_prefix(instruction),
-                instruction.rust_module_name,
-                instruction_name_prefix(instruction)
-            )
-            .expect("string write should succeed");
-        }
+        writeln!(
+            &mut output,
+            "    {}({}::{}PreparedExecution),",
+            instruction_name_prefix(instruction),
+            instruction.rust_module_name,
+            instruction_name_prefix(instruction)
+        )
+        .expect("string write should succeed");
     }
     writeln!(&mut output, "}}").expect("string write should succeed");
     writeln!(&mut output).expect("string write should succeed");
@@ -850,7 +839,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn dispatch_prepare_execution<'a>(program_id: &SolanaPubkey, instruction: {}<'a>, account_infos: &[AccountInfo<'_>]) -> Result<{}<'a>, {}> {{",
+        "pub fn dispatch_prepare_execution(program_id: &SolanaPubkey, instruction: {}, account_infos: &[AccountInfo<'_>]) -> Result<{}, {}> {{",
         program_instruction_enum_name(program),
         program_prepared_instruction_enum_name(program),
         program_dispatch_error_enum_name(program)
@@ -918,7 +907,7 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
     writeln!(&mut output).expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn dispatch_prepare_execution_from_bytes<'a>(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_data: {}<'a>, account_infos: &[AccountInfo<'_>]) -> Result<{}<'a>, {}> {{",
+        "pub fn dispatch_prepare_execution_from_bytes(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_data: {}, account_infos: &[AccountInfo<'_>]) -> Result<{}, {}> {{",
         program_instruction_account_data_enum_name(program),
         program_prepared_instruction_enum_name(program),
         program_dispatch_from_bytes_error_enum_name(program)
@@ -940,6 +929,75 @@ fn render_instructions_mod_rs(program: &NormalizedProgram) -> String {
         &mut output,
         "    dispatch_prepare_execution(program_id, instruction, account_infos).map_err({}::Dispatch)",
         program_dispatch_from_bytes_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(&mut output, "#[derive(Debug, PartialEq, Eq)]").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub enum {}<ResolveError> {{",
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Decode({}),",
+        program_instruction_data_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "    Resolve(ResolveError),").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Bind({}),",
+        program_bind_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    Dispatch({}),",
+        program_dispatch_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "}}").expect("string write should succeed");
+    writeln!(&mut output).expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "pub fn dispatch_prepare_execution_from_bytes_with_resolver<ResolveError, ResolveAccountData>(program_id: &SolanaPubkey, instruction_bytes: &[u8], account_infos: &[AccountInfo<'_>], resolve_account_data: ResolveAccountData) -> Result<{}, {}<ResolveError>>",
+        program_prepared_instruction_enum_name(program),
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "where ResolveAccountData: FnOnce(&{}) -> Result<{}, ResolveError>,",
+        program_instruction_data_enum_name(program),
+        program_instruction_account_data_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(&mut output, "{{").expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let instruction_data = decode_instruction_data(instruction_bytes).map_err({}::Decode)?;",
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let account_data = resolve_account_data(&instruction_data).map_err({}::Resolve)?;",
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    let instruction = bind_instruction_context(instruction_data, account_data).map_err({}::Bind)?;",
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
+    )
+    .expect("string write should succeed");
+    writeln!(
+        &mut output,
+        "    dispatch_prepare_execution(program_id, instruction, account_infos).map_err({}::Dispatch)",
+        program_dispatch_from_bytes_with_resolver_error_enum_name(program)
     )
     .expect("string write should succeed");
     writeln!(&mut output, "}}").expect("string write should succeed");
@@ -1135,7 +1193,7 @@ fn render_instruction_rs(
         },
         if uses_validation_account_data {
             format!(
-                ", account_data: &{}AccountData<'_>",
+                ", account_data: &{}AccountData",
                 instruction_name_prefix(instruction)
             )
         } else {
@@ -1267,14 +1325,14 @@ fn render_instruction_rs(
             .expect("string write should succeed");
         writeln!(
             &mut output,
-            "pub struct {}AccountData<'a> {{",
+            "pub struct {}AccountData {{",
             instruction_name_prefix(instruction)
         )
         .expect("string write should succeed");
         for account in &account_data_accounts {
             writeln!(
                 &mut output,
-                "    pub {}: &'a {},",
+                "    pub {}: {},",
                 account.rust_field_name, account.rust_type_name
             )
             .expect("string write should succeed");
@@ -1323,21 +1381,12 @@ fn render_instruction_rs(
     writeln!(&mut output).expect("string write should succeed");
     writeln!(&mut output, "#[derive(Debug, Clone, PartialEq, Eq)]")
         .expect("string write should succeed");
-    if uses_account_data {
-        writeln!(
-            &mut output,
-            "pub struct {}PreparedExecution<'a> {{",
-            instruction_name_prefix(instruction)
-        )
-        .expect("string write should succeed");
-    } else {
-        writeln!(
-            &mut output,
-            "pub struct {}PreparedExecution {{",
-            instruction_name_prefix(instruction)
-        )
-        .expect("string write should succeed");
-    }
+    writeln!(
+        &mut output,
+        "pub struct {}PreparedExecution {{",
+        instruction_name_prefix(instruction)
+    )
+    .expect("string write should succeed");
     writeln!(
         &mut output,
         "    pub accounts: {}Accounts,",
@@ -1353,7 +1402,7 @@ fn render_instruction_rs(
     if uses_account_data {
         writeln!(
             &mut output,
-            "    pub account_data: &'a {}AccountData<'a>,",
+            "    pub account_data: {}AccountData,",
             instruction_name_prefix(instruction)
         )
         .expect("string write should succeed");
@@ -1367,19 +1416,17 @@ fn render_instruction_rs(
     .expect("string write should succeed");
     writeln!(
         &mut output,
-        "pub fn prepare_execution{}(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &{}Args{}) -> Result<{}PreparedExecution{}, RuntimeValidationError> {{",
-        if uses_account_data { "<'a>" } else { "" },
+        "pub fn prepare_execution(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], args: &{}Args{}) -> Result<{}PreparedExecution, RuntimeValidationError> {{",
         instruction_name_prefix(instruction),
         if uses_account_data {
             format!(
-                ", account_data: &'a {}AccountData<'a>",
+                ", account_data: {}AccountData",
                 instruction_name_prefix(instruction)
             )
         } else {
             String::new()
         },
         instruction_name_prefix(instruction),
-        if uses_account_data { "<'a>" } else { "" },
     )
     .expect("string write should succeed");
     writeln!(
@@ -1387,7 +1434,7 @@ fn render_instruction_rs(
         "    validate_runtime_accounts(program_id, account_infos{}{})?;",
         if uses_runtime_args { ", args" } else { "" },
         if uses_validation_account_data {
-            ", account_data"
+            ", &account_data"
         } else {
             ""
         },
@@ -1437,7 +1484,7 @@ fn render_instruction_rs(
         instruction_name_prefix(instruction),
         if uses_account_data {
             format!(
-                ", account_data: &{}AccountData<'_>",
+                ", account_data: {}AccountData",
                 instruction_name_prefix(instruction)
             )
         } else {
@@ -1466,7 +1513,7 @@ fn render_instruction_rs(
         &mut output,
         "    execute(&mut prepared.accounts, prepared.args{})",
         if uses_account_data {
-            ", prepared.account_data"
+            ", &prepared.account_data"
         } else {
             ""
         }
@@ -1487,7 +1534,7 @@ fn render_instruction_rs(
         instruction_name_prefix(instruction),
         if uses_account_data {
             format!(
-                ", _account_data: &{}AccountData<'_>",
+                ", _account_data: &{}AccountData",
                 instruction_name_prefix(instruction)
             )
         } else {
@@ -1858,6 +1905,15 @@ fn program_dispatch_from_bytes_error_enum_name(program: &NormalizedProgram) -> S
     format!("{}DispatchFromBytesError", program_name_prefix(program))
 }
 
+fn program_dispatch_from_bytes_with_resolver_error_enum_name(
+    program: &NormalizedProgram,
+) -> String {
+    format!(
+        "{}DispatchFromBytesWithResolverError",
+        program_name_prefix(program)
+    )
+}
+
 fn seed_kind_name(kind: &SeedKind) -> &'static str {
     match kind {
         SeedKind::Const => "const",
@@ -2099,9 +2155,10 @@ mod tests {
         r#"#![allow(deprecated)]
 
 use escrow::instructions::{
-    dispatch_prepare_execution_from_bytes, EscrowDispatchError, EscrowDispatchFromBytesError,
-    EscrowInstructionAccountData, EscrowInstructionData, EscrowPreparedInstruction,
-    release_escrow::{ReleaseEscrowAccountData, ReleaseEscrowArgs},
+    create_escrow::CreateEscrowArgs, dispatch_prepare_execution_from_bytes_with_resolver,
+    release_escrow::{ReleaseEscrowAccountData, ReleaseEscrowArgs}, EscrowDispatchError,
+    EscrowDispatchFromBytesWithResolverError, EscrowInstructionAccountData,
+    EscrowInstructionData, EscrowPreparedInstruction,
 };
 use escrow::state::escrow::Escrow;
 use solana_account::Account;
@@ -2110,6 +2167,7 @@ use solana_keypair::Keypair;
 use solana_program::{account_info::AccountInfo, entrypoint::ProgramResult, pubkey::Pubkey};
 use solana_program_test::{processor, ProgramTest};
 use solana_signer::Signer;
+use solana_system_interface::program as system_program;
 use solana_transaction::Transaction;
 
 fn process_instruction(
@@ -2117,28 +2175,36 @@ fn process_instruction(
     accounts: &[AccountInfo<'_>],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    let escrow_state = Escrow {
-        depositor: accounts[0].key.to_bytes(),
-        beneficiary: accounts[1].key.to_bytes(),
-        amount: 42,
-        status: 0,
-    };
-    let account_data = ReleaseEscrowAccountData {
-        escrow: &escrow_state,
-    };
-    let prepared = dispatch_prepare_execution_from_bytes(
+    let prepared = dispatch_prepare_execution_from_bytes_with_resolver(
         program_id,
         instruction_data,
-        EscrowInstructionAccountData::ReleaseEscrow {
-            account_data: &account_data,
-        },
         accounts,
+        |instruction_data| {
+            Ok::<EscrowInstructionAccountData, core::convert::Infallible>(match instruction_data {
+                EscrowInstructionData::CreateEscrow(_) => EscrowInstructionAccountData::CreateEscrow,
+                EscrowInstructionData::ReleaseEscrow(_) => {
+                    let escrow_state = Escrow {
+                        depositor: accounts[0].key.to_bytes(),
+                        beneficiary: accounts[1].key.to_bytes(),
+                        amount: 42,
+                        status: 0,
+                    };
+                    EscrowInstructionAccountData::ReleaseEscrow {
+                        account_data: ReleaseEscrowAccountData {
+                            escrow: escrow_state,
+                        },
+                    }
+                }
+            })
+        },
     )
     .map_err(|error| match error {
-        EscrowDispatchFromBytesError::Decode(_) | EscrowDispatchFromBytesError::Bind(_) => {
+        EscrowDispatchFromBytesWithResolverError::Decode(_)
+        | EscrowDispatchFromBytesWithResolverError::Resolve(_)
+        | EscrowDispatchFromBytesWithResolverError::Bind(_) => {
             solana_program::program_error::ProgramError::InvalidInstructionData
         }
-        EscrowDispatchFromBytesError::Dispatch(inner) => match inner {
+        EscrowDispatchFromBytesWithResolverError::Dispatch(inner) => match inner {
             EscrowDispatchError::ReleaseEscrow(inner) => {
                 solana_program::program_error::ProgramError::from(inner)
             }
@@ -2148,24 +2214,48 @@ fn process_instruction(
         },
     })?;
     match prepared {
+        EscrowPreparedInstruction::CreateEscrow(prepared) => {
+            assert_eq!(prepared.accounts.depositor, accounts[0].key.to_bytes());
+            assert_eq!(prepared.accounts.beneficiary, accounts[1].key.to_bytes());
+            assert_eq!(prepared.accounts.escrow, accounts[2].key.to_bytes());
+            assert_eq!(prepared.accounts.system_program, accounts[3].key.to_bytes());
+            assert_eq!(prepared.args.amount, 42);
+        }
         EscrowPreparedInstruction::ReleaseEscrow(prepared) => {
             assert_eq!(prepared.accounts.depositor, accounts[0].key.to_bytes());
             assert_eq!(prepared.accounts.beneficiary, accounts[1].key.to_bytes());
             assert_eq!(prepared.accounts.escrow, accounts[2].key.to_bytes());
-        }
-        EscrowPreparedInstruction::CreateEscrow(_) => {
-            panic!("unexpected prepared instruction variant")
+            assert_eq!(prepared.account_data.escrow.amount, 42);
         }
     }
     Ok(())
 }
 
-fn build_instruction(
+fn build_create_instruction(
     program_id: Pubkey,
     depositor: Pubkey,
     beneficiary: Pubkey,
     escrow: Pubkey,
-    instruction_data: Vec<u8>,
+    system_program: Pubkey,
+    args: CreateEscrowArgs,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(depositor, true),
+            AccountMeta::new_readonly(beneficiary, false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(system_program, false),
+        ],
+        data: EscrowInstructionData::CreateEscrow(args).encode(),
+    }
+}
+
+fn build_release_instruction(
+    program_id: Pubkey,
+    depositor: Pubkey,
+    beneficiary: Pubkey,
+    escrow: Pubkey,
 ) -> Instruction {
     Instruction {
         program_id,
@@ -2174,7 +2264,7 @@ fn build_instruction(
             AccountMeta::new(beneficiary, false),
             AccountMeta::new(escrow, false),
         ],
-        data: instruction_data,
+        data: EscrowInstructionData::ReleaseEscrow(ReleaseEscrowArgs {}).encode(),
     }
 }
 
@@ -2210,12 +2300,11 @@ async fn generated_prepare_execution_accepts_matching_runtime_inputs() {
     program_test.add_account(escrow, test_account(1_000_000_000, program_id, 128));
 
     let context = program_test.start_with_context().await;
-    let instruction = build_instruction(
+    let instruction = build_release_instruction(
         program_id,
         depositor.pubkey(),
         beneficiary.pubkey(),
         escrow,
-        EscrowInstructionData::ReleaseEscrow(ReleaseEscrowArgs {}).encode(),
     );
     let transaction = Transaction::new_signed_with_payer(
         &[instruction],
@@ -2229,6 +2318,58 @@ async fn generated_prepare_execution_accepts_matching_runtime_inputs() {
         .process_transaction(transaction)
         .await
         .expect("matching generated runtime inputs should pass");
+}
+
+#[tokio::test]
+async fn generated_prepare_execution_accepts_create_escrow_runtime_inputs() {
+    let program_id = Pubkey::new_unique();
+    let depositor = Keypair::new();
+    let beneficiary = Pubkey::new_unique();
+    let (escrow, _bump) = Pubkey::find_program_address(
+        &[b"escrow", depositor.pubkey().as_ref(), beneficiary.as_ref()],
+        &program_id,
+    );
+
+    let mut program_test = ProgramTest::new("generated-escrow", program_id, processor!(process_instruction));
+    program_test.add_account(
+        depositor.pubkey(),
+        test_account(1_000_000_000, Pubkey::new_unique(), 0),
+    );
+    program_test.add_account(
+        beneficiary,
+        test_account(1_000_000_000, Pubkey::new_unique(), 0),
+    );
+    program_test.add_account(escrow, test_account(1_000_000_000, program_id, 128));
+    program_test.add_account(
+        system_program::ID,
+        test_account(1_000_000_000, Pubkey::new_unique(), 0),
+    );
+
+    let context = program_test.start_with_context().await;
+    let instruction = build_create_instruction(
+        program_id,
+        depositor.pubkey(),
+        beneficiary,
+        escrow,
+        system_program::ID,
+        CreateEscrowArgs {
+            depositor: depositor.pubkey().to_bytes(),
+            beneficiary: beneficiary.to_bytes(),
+            amount: 42,
+        },
+    );
+    let transaction = Transaction::new_signed_with_payer(
+        &[instruction],
+        Some(&context.payer.pubkey()),
+        &[&context.payer, &depositor],
+        context.last_blockhash,
+    );
+
+    context
+        .banks_client
+        .process_transaction(transaction)
+        .await
+        .expect("matching generated runtime inputs should pass for create_escrow");
 }
 
 #[tokio::test]
@@ -2253,16 +2394,23 @@ async fn generated_prepare_execution_rejects_malformed_instruction_bytes() {
     program_test.add_account(escrow, test_account(1_000_000_000, program_id, 128));
 
     let context = program_test.start_with_context().await;
-    let mut malformed_instruction_data =
-        EscrowInstructionData::ReleaseEscrow(ReleaseEscrowArgs {}).encode();
-    malformed_instruction_data.push(0);
-    let instruction = build_instruction(
+    let mut malformed_instruction_data = build_release_instruction(
         program_id,
         depositor.pubkey(),
         beneficiary.pubkey(),
         escrow,
-        malformed_instruction_data,
-    );
+    )
+    .data;
+    malformed_instruction_data.push(0);
+    let instruction = Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(depositor.pubkey(), true),
+            AccountMeta::new(beneficiary.pubkey(), false),
+            AccountMeta::new(escrow, false),
+        ],
+        data: malformed_instruction_data,
+    };
     let transaction = Transaction::new_signed_with_payer(
         &[instruction],
         Some(&context.payer.pubkey()),
@@ -2289,7 +2437,7 @@ async fn generated_prepare_execution_rejects_malformed_instruction_bytes() {
             .expect("generated Cargo.toml should be appendable");
         writeln!(
             cargo_toml,
-            "\n[dev-dependencies]\nsolana-program = \"4.0.0\"\nsolana-program-test = {{ version = \"4.0.0\", features = [\"agave-unstable-api\"] }}\nsolana-account = \"3.4.0\"\nsolana-instruction = \"3.3.0\"\nsolana-keypair = \"3.1.2\"\nsolana-signer = \"3.0.0\"\nsolana-transaction = \"3.1.0\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\n"
+            "\n[dev-dependencies]\nsolana-program = \"=4.0.0\"\nsolana-program-test = {{ version = \"=4.0.0\", features = [\"agave-unstable-api\"] }}\nsolana-account = \"=3.4.0\"\nsolana-instruction = \"=3.3.0\"\nsolana-keypair = \"=3.1.2\"\nsolana-signer = \"=3.0.0\"\nsolana-system-interface = \"=3.1.0\"\nsolana-transaction = \"=3.1.0\"\ntokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\n"
         )
         .expect("generated Cargo.toml should accept dev-dependencies");
 
@@ -2386,21 +2534,26 @@ async fn generated_prepare_execution_rejects_malformed_instruction_bytes() {
         assert!(instruction_rs.contains("pub fn execute_with_runtime_validation("));
         assert!(instructions_mod_rs.contains("pub enum EscrowInstructionData"));
         assert!(instructions_mod_rs.contains("pub fn decode_instruction_data(input: &[u8])"));
-        assert!(instructions_mod_rs.contains("pub enum EscrowInstructionAccountData<'a>"));
-        assert!(instructions_mod_rs.contains("pub fn bind_instruction_context<'a>("));
-        assert!(instructions_mod_rs.contains("pub enum EscrowInstruction<'a>"));
-        assert!(instructions_mod_rs.contains("pub enum EscrowPreparedInstruction<'a>"));
+        assert!(instructions_mod_rs.contains("pub enum EscrowInstructionAccountData"));
+        assert!(instructions_mod_rs.contains("pub fn bind_instruction_context("));
+        assert!(instructions_mod_rs.contains("pub enum EscrowInstruction"));
+        assert!(instructions_mod_rs.contains("pub enum EscrowPreparedInstruction"));
         assert!(instructions_mod_rs.contains("pub enum EscrowDispatchError"));
-        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution<'a>("));
+        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution("));
         assert!(instructions_mod_rs.contains("pub enum EscrowDispatchFromBytesError"));
-        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution_from_bytes<'a>("));
+        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution_from_bytes("));
+        assert!(
+            instructions_mod_rs
+                .contains("pub enum EscrowDispatchFromBytesWithResolverError<ResolveError>")
+        );
+        assert!(instructions_mod_rs.contains("pub fn dispatch_prepare_execution_from_bytes_with_resolver<ResolveError, ResolveAccountData>("));
         assert!(instructions_mod_rs.contains("pub fn name(&self) -> &'static str"));
         assert!(instruction_rs.contains("pub fn validate_account_descriptors()"));
         assert!(release_instruction_rs.contains("validate_program_account_infos_with_context"));
         assert!(release_instruction_rs.contains("InstructionAccountPubkeyField"));
         assert!(release_instruction_rs.contains("InstructionValidationContext"));
-        assert!(release_instruction_rs.contains("pub struct ReleaseEscrowAccountData<'a>"));
-        assert!(release_instruction_rs.contains("pub struct ReleaseEscrowPreparedExecution<'a>"));
+        assert!(release_instruction_rs.contains("pub struct ReleaseEscrowAccountData"));
+        assert!(release_instruction_rs.contains("pub struct ReleaseEscrowPreparedExecution"));
         assert!(release_instruction_rs.contains("pub fn prepare_execution"));
         assert!(instruction_rs.contains("account_type=Escrow"));
         assert!(instruction_rs.contains("space=128"));
@@ -2572,10 +2725,10 @@ programs:
 
         assert!(instruction_rs.contains("validate_program_account_infos_with_context"));
         assert!(instruction_rs.contains("InstructionAccountPubkeyField"));
-        assert!(instruction_rs.contains("pub struct CreateVaultAccountData<'a>"));
-        assert!(instruction_rs.contains("pub struct CreateVaultPreparedExecution<'a>"));
+        assert!(instruction_rs.contains("pub struct CreateVaultAccountData"));
+        assert!(instruction_rs.contains("pub struct CreateVaultPreparedExecution"));
         assert!(instruction_rs.contains(
-            "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], account_data: &CreateVaultAccountData<'_>)"
+            "pub fn validate_runtime_accounts(program_id: &SolanaPubkey, account_infos: &[AccountInfo<'_>], account_data: &CreateVaultAccountData)"
         ));
         assert!(instruction_rs.contains(
             "InstructionAccountPubkeyField { account: \"profile\", field: \"authority\", value: account_data.profile.authority }"

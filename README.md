@@ -114,8 +114,9 @@ AQAMI can now also validate canonical PDAs derived from explicit `const` and `ac
 AQAMI can now also validate arg-backed PDA seeds and bumps through explicit typed runtime argument context instead of opaque byte-packing conventions.
 AQAMI can now also validate `account_field` PDA seeds and `hasOne` account relationships through explicit typed pubkey-field context supplied by generated instruction entrypoints.
 Generated instruction modules now also expose runtime validation entrypoints that call AQAMI runtime helpers directly, including typed arg wiring for arg-backed PDAs and explicit typed account-data wiring for pubkey field checks.
-Generated instruction modules now also expose execution-preparation helpers that validate runtime inputs, collect explicit account-key views, and carry typed readable state inputs into program logic without hidden decoding conventions.
+Generated instruction modules now also expose execution-preparation helpers that validate runtime inputs, collect explicit account-key views, and carry owned typed readable state inputs into program logic without hidden decoding conventions.
 Generated `instructions/mod.rs` surfaces now also expose a typed dispatch-preparation contract that routes instruction variants into the correct prepared execution boundary without inventing a raw byte wire format yet.
+Generated `instructions/mod.rs` surfaces now also expose an explicit per-program instruction-data codec, typed instruction/context binding, and resolver-driven byte-dispatch preparation while still keeping the wire contract generator-defined and reviewable instead of pretending AQAMI has a stable ecosystem-wide serialization format already.
 
 ## Performance Position
 
@@ -227,7 +228,7 @@ The framework should be something a serious team can trust, not a demo that happ
 
 ## Status
 
-As of June 19, 2026, this repository has a stronger executable foundation:
+As of July 2, 2026, this repository has a stronger executable foundation:
 
 - documentation and agent guidance
 - starter schema and example spec
@@ -239,8 +240,9 @@ As of June 19, 2026, this repository has a stronger executable foundation:
 - a first `solana-program-test` integration test path
 - runtime owner, system-program, canonical PDA, arg-backed PDA, `account_field` PDA, and `hasOne` validation helpers
 - generated instruction-level runtime validation entrypoints with typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
-- generated execution-preparation boundaries that turn `AccountInfo` plus typed AQAMI inputs into explicit execution values
+- generated execution-preparation boundaries that turn `AccountInfo` plus typed AQAMI inputs into explicit execution values with owned readable state inputs
 - generated-program `solana-program-test` coverage for the execution-preparation boundary
+- generated per-program instruction-data encode/decode helpers, typed instruction/context binding, and resolver-driven byte-dispatch preparation
 - CLI `validate`, `inspect`, and `generate` commands
 
-The next most valuable step is to define an explicit instruction-data and dispatch contract, continue broadening runtime-aware generated flows without hidden account-byte decoding, and then build client and MCP surfaces on top of that stabilized execution model.
+The next most valuable step is to broaden end-to-end generated execution flow around that explicit instruction-data contract, keep raw account-state decoding assumptions out of the runtime surface, and then build client and MCP surfaces on top of that stabilized execution model.

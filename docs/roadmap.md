@@ -76,6 +76,7 @@ Today AQAMI includes:
 - `account_field` PDA seed validation through explicit typed pubkey-field runtime context
 - runtime `hasOne` validation through explicit typed pubkey-field runtime context
 - typed generated dispatch preparation on top of per-instruction execution-preparation helpers
+- generated per-program instruction-data codecs plus resolver-driven byte dispatch on top of that typed boundary
 
 The main implementation crates are:
 
@@ -99,16 +100,17 @@ Right now, AQAMI can:
 - validate canonical PDA derivation for `const` and `account_key` seed forms in the same harness
 - validate arg-backed PDA seeds and bumps when typed runtime instruction arguments are supplied explicitly
 - validate `account_field` PDA seeds and `hasOne` relationships when typed pubkey field context is supplied explicitly
-- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs and typed account-data wiring for pubkey field checks
-- generate explicit execution-preparation boundaries that validate runtime inputs and produce named account-key views plus typed readable state inputs
+- generate instruction-level runtime validation entrypoints backed by `aqami-runtime`, including typed arg wiring for arg-backed PDAs and explicit typed account-data wiring for pubkey field checks
+- generate explicit execution-preparation boundaries that validate runtime inputs and produce named account-key views plus owned typed readable state inputs
 - prove that generated execution-preparation boundary in a generated-program `solana-program-test` harness
 - generate a typed dispatch-preparation contract that routes instruction variants into the correct prepared execution boundary
+- generate explicit per-program instruction-data encode/decode helpers, typed instruction/context binding, and resolver-driven byte dispatch preparation
 
 ### What AQAMI Cannot Do Yet
 
 Right now, AQAMI does not yet provide:
 
-- generic instruction-data decoding or dispatch
+- a generic or ecosystem-stable instruction-data contract beyond the currently generated per-program codec
 - automatic account-state deserialization from raw bytes
 - real CPI helpers
 - client SDK generation
@@ -163,6 +165,8 @@ The implementation history has followed this sequence:
 15. explicit typed-context validation for `account_field` PDA seeds and runtime `hasOne`
 16. generated execution-preparation boundaries with generated-program runtime tests
 17. generated typed dispatch-preparation contract
+18. generated explicit per-program instruction-data codecs and byte-driven dispatch preparation
+19. owned readable state inputs plus resolver-driven byte dispatch preparation
 
 This has been deliberate.
 Each phase was chosen to strengthen AQAMI's source of truth before adding more runtime complexity.
@@ -193,8 +197,8 @@ It should continue growing into:
 ### Phase 3: Runtime-Aware Generation
 
 This phase has started.
-AQAMI code generation has now moved beyond minimal skeletons into explicit runtime validation and execution preparation.
-The next step inside this phase is to define an explicit instruction-data and dispatch contract on top of that boundary.
+AQAMI code generation has now moved beyond minimal skeletons into explicit runtime validation, execution preparation, typed dispatch, and generated per-program instruction-data codecs.
+The next step inside this phase is to broaden that generated execution flow while still refusing hidden raw-account deserialization assumptions.
 
 ### Phase 4: Testing Depth
 

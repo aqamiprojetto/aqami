@@ -116,8 +116,8 @@ Today the architecture is partially implemented:
 - `aqami-codegen` exists and generates deterministic Rust program skeletons
 - `aqami-runtime` exists and provides shared descriptors plus runtime validation helpers
 - `aqami-cli` exists and exposes `validate`, `inspect`, and `generate`
-- generated instruction modules now expose explicit runtime validation and execution-preparation boundaries
-- generated instruction modules now also expose a typed dispatch-preparation contract in `instructions/mod.rs`
+- generated instruction modules now expose explicit runtime validation and execution-preparation boundaries with owned readable state inputs
+- generated instruction modules now also expose an explicit instruction-data codec plus typed binding and resolver-driven dispatch-preparation contracts in `instructions/mod.rs`
 - `aqami-mcp` is still intentionally deferred until the spec, runtime, and CLI surfaces stabilize further
 
 That means AQAMI is no longer only an architecture sketch.
@@ -151,7 +151,8 @@ agent
 
 ```text
 transaction input
-  -> generated instruction boundary
+  -> generated instruction-data codec
+  -> generated typed instruction/account-data binding or resolver-based account-data stitching
   -> runtime account/instruction validation helpers
   -> explicit program logic
   -> explicit error/event surfaces
@@ -272,13 +273,14 @@ The architecture has already crossed these checkpoints:
 - deterministic Rust program skeleton generation
 - first shared `aqami-runtime` descriptor and validation surface
 - generated instruction-level runtime validation entrypoints
+- generated execution-preparation with owned readable state inputs, typed dispatch, and per-program instruction-data codec surfaces
 
 ## Next Architectural Milestones
 
 The next architecture-bearing steps are:
 
-- define an explicit instruction-data and dispatch contract on top of the current preparation boundary
-- expand runtime helpers without introducing hidden serialization or decoding conventions
+- broaden end-to-end generated execution flow on top of the explicit instruction-data contract
+- expand runtime helpers without introducing hidden serialization or hidden account-state decoding conventions
 - broaden end-to-end generated-program testing
 - add client and MCP surfaces only on top of those stabilized foundations
 - snapshot tests
